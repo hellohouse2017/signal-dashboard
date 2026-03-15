@@ -34,6 +34,7 @@ SANE_RANGES = {
     "Oil":  (10, 200),      # WTI 原油
     "Gold": (800, 15000),   # 黃金（2026 年已破 5000）
     "Yield":(0.5, 8),       # 10年殖利率
+    "SMH":  (50, 500),      # 半導體 ETF
 }
 
 def validate_data(df):
@@ -345,6 +346,7 @@ TICKER_MAP = {
     "Oil":   [("CL=F", None), ("USO", lambda s: s / s.iloc[-1] * 70)],
     "Gold":  [("GC=F", None), ("GLD", lambda s: s / s.iloc[-1] * 3000)],
     "Yield": [("^TNX", None)],
+    "SMH":   [("SMH", None)],
 }
 
 # 更嚴格的範圍檢查（用於防止欄位混淆）
@@ -355,6 +357,7 @@ STRICT_RANGES = {
     "Oil":   (30, 150),     # 近年油價 40-130
     "Gold":  (1500, 8000),  # 近年金價 1800-5000+
     "Yield": (1.0, 6.0),    # 近年殖利率 1-5%
+    "SMH":   (100, 400),    # 近年 SMH 在 150-350
 }
 
 def _isolated_download(ticker, period=None, start=None, end=None):
@@ -465,9 +468,13 @@ def add_indicators(df):
     df["RSI"] = 100 - 100 / (1 + gain / loss.replace(0, 1e-10))
     df["MA20"] = df["0050"].rolling(20).mean()
     df["MA60"] = df["0050"].rolling(60).mean()
+    df["MA120"] = df["0050"].rolling(120).mean()
     df["above_MA20"] = df["0050"] > df["MA20"]
     df["above_MA60"] = df["0050"] > df["MA60"]
     df["momentum_20"] = df["0050"].pct_change(20) * 100
+    df["drawdown"] = (df["0050"] / df["0050"].cummax() - 1) * 100
+    if "SMH" in df.columns:
+        df["SMH_MA50"] = df["SMH"].rolling(50).mean()
     return df
 
 def calc_signal(row):
@@ -570,7 +577,77 @@ def calc_signal(row):
     return {
         "signal": signal, "label": label, "color": color,
         "score": round(score, 1), "position": position,
+        "ma60": round(float(row.get("MA60", 0)), 2),
         "details": details
+    }
+
+def calc_catastrophe(row):
+    """計算災難出場(5取3) / 安全進場(4取3) 條件"""
+    import numpy as np
+
+    price = float(row.get("0050", 0))
+    vix = float(row.get("VIX", 20))
+    mom = float(row.get("momentum_20", 0))
+    ma120 = float(row.get("MA120", 0))
+    ma60 = float(row.get("MA60", 0))
+    dd = float(row.get("drawdown", 0))
+    smh = float(row.get("SMH", 0)) if "SMH" in row.index else 0
+    smh_ma50 = float(row.get("SMH_MA50", 0)) if "SMH_MA50" in row.index else 0
+
+    # 處理 NaN
+    for v in [ma120, ma60, smh_ma50, dd, mom]:
+        if np.isnan(v):
+            return {"exit_score": 0, "entry_score": 0, "exit_triggered": False,
+                    "entry_triggered": False, "exit_conditions": [], "entry_conditions": [],
+                    "status": "data_insufficient"}
+
+    # 5 個出場條件
+    exit_conditions = [
+        {"name": "0050 < MA120×0.97", "threshold": f"< {ma120*0.97:.2f}",
+         "value": f"{price:.2f}", "met": price < ma120 * 0.97},
+        {"name": "VIX > 28", "threshold": "> 28",
+         "value": f"{vix:.1f}", "met": vix > 28},
+        {"name": "動能 < -8%", "threshold": "< -8%",
+         "value": f"{mom:.1f}%", "met": mom < -8},
+        {"name": "SMH < MA50", "threshold": f"< {smh_ma50:.2f}",
+         "value": f"{smh:.2f}", "met": smh < smh_ma50 and smh > 0},
+        {"name": "回撤 > 8%", "threshold": "< -8%",
+         "value": f"{dd:.1f}%", "met": dd < -8},
+    ]
+
+    # 4 個進場條件
+    entry_conditions = [
+        {"name": "0050 > MA60", "threshold": f"> {ma60:.2f}",
+         "value": f"{price:.2f}", "met": price > ma60},
+        {"name": "VIX < 25", "threshold": "< 25",
+         "value": f"{vix:.1f}", "met": vix < 25},
+        {"name": "動能 > 0%", "threshold": "> 0%",
+         "value": f"{mom:.1f}%", "met": mom > 0},
+        {"name": "SMH > MA50", "threshold": f"> {smh_ma50:.2f}",
+         "value": f"{smh:.2f}", "met": smh > smh_ma50 and smh > 0},
+    ]
+
+    exit_score = sum(1 for c in exit_conditions if c["met"])
+    entry_score = sum(1 for c in entry_conditions if c["met"])
+
+    # 綜合狀態
+    if exit_score >= 3:
+        status = "exit_triggered"
+    elif exit_score >= 2:
+        status = "exit_warning"
+    elif entry_score >= 3:
+        status = "entry_safe"
+    else:
+        status = "normal"
+
+    return {
+        "exit_score": exit_score,
+        "entry_score": entry_score,
+        "exit_triggered": exit_score >= 3,
+        "entry_triggered": entry_score >= 3,
+        "exit_conditions": exit_conditions,
+        "entry_conditions": entry_conditions,
+        "status": status,
     }
 
 def run_backtest(start, end):
@@ -688,6 +765,9 @@ def api_signal():
         result = calc_signal(latest)
         result["date"] = df.index[-1].strftime("%Y-%m-%d")
         result["price"] = round(latest["0050"], 2)
+
+        # 災難出場/進場條件
+        result["catastrophe"] = calc_catastrophe(latest)
 
         # 數據新鮮度
         last_date = df.index[-1]

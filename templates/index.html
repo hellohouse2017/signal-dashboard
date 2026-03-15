@@ -533,6 +533,59 @@ async function loadSignal() {
         });
         document.getElementById('indicators').innerHTML = html;
         window._latestPrice = d.price;
+
+        // ===== 災難出場/進場面板 =====
+        if (d.catastrophe && d.catastrophe.status !== 'data_insufficient') {
+            const cat = d.catastrophe;
+            const statusMap = {
+                exit_triggered: {icon:'🚨', label:'出場警報！', color:'var(--red)', bg:'rgba(239,68,68,0.12)', border:'rgba(239,68,68,0.5)'},
+                exit_warning:   {icon:'⚠️', label:'出場預警', color:'var(--yellow)', bg:'rgba(245,158,11,0.08)', border:'rgba(245,158,11,0.4)'},
+                entry_safe:     {icon:'✅', label:'安全進場', color:'var(--green)', bg:'rgba(16,185,129,0.08)', border:'rgba(16,185,129,0.4)'},
+                normal:         {icon:'😎', label:'正常持有', color:'var(--text2)', bg:'rgba(45,55,72,0.3)', border:'var(--border)'},
+            };
+            const st = statusMap[cat.status] || statusMap.normal;
+
+            const exitDots = cat.exit_conditions.map(c =>
+                `<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:${c.met?'rgba(239,68,68,0.1)':'rgba(45,55,72,0.3)'};border-radius:8px;border:1px solid ${c.met?'rgba(239,68,68,0.3)':'var(--border)'}">
+                    <span style="font-size:16px">${c.met?'🔴':'⚪'}</span>
+                    <span style="flex:1;font-size:13px;font-weight:500">${c.name}</span>
+                    <span style="font-size:13px;font-weight:700;color:${c.met?'var(--red)':'var(--text2)'}">${c.value}</span>
+                    <span style="font-size:11px;color:var(--text2)">${c.threshold}</span>
+                </div>`
+            ).join('');
+
+            const entryDots = cat.entry_conditions.map(c =>
+                `<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:${c.met?'rgba(16,185,129,0.1)':'rgba(45,55,72,0.3)'};border-radius:8px;border:1px solid ${c.met?'rgba(16,185,129,0.3)':'var(--border)'}">
+                    <span style="font-size:16px">${c.met?'🟢':'⚪'}</span>
+                    <span style="flex:1;font-size:13px;font-weight:500">${c.name}</span>
+                    <span style="font-size:13px;font-weight:700;color:${c.met?'var(--green)':'var(--text2)'}">${c.value}</span>
+                    <span style="font-size:11px;color:var(--text2)">${c.threshold}</span>
+                </div>`
+            ).join('');
+
+            const catHtml = `
+            <div style="background:${st.bg};border:2px solid ${st.border};border-radius:20px;padding:24px;margin-bottom:24px;${cat.status==='exit_triggered'?'animation:pulse 2s ease-in-out infinite;':''}">
+                <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+                    <span style="font-size:28px">${st.icon}</span>
+                    <div>
+                        <div style="font-size:18px;font-weight:800;color:${st.color}">${st.label}</div>
+                        <div style="font-size:12px;color:var(--text2)">災難出場 ${cat.exit_score}/5 ・ 安全進場 ${cat.entry_score}/4 ・ 冷卻期 5 天</div>
+                    </div>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+                    <div>
+                        <div style="font-size:13px;font-weight:700;color:var(--red);margin-bottom:8px">🔴 出場條件（5取3）：${cat.exit_score}/5</div>
+                        <div style="display:flex;flex-direction:column;gap:6px">${exitDots}</div>
+                    </div>
+                    <div>
+                        <div style="font-size:13px;font-weight:700;color:var(--green);margin-bottom:8px">🟢 進場條件（4取3）：${cat.entry_score}/4</div>
+                        <div style="display:flex;flex-direction:column;gap:6px">${entryDots}</div>
+                    </div>
+                </div>
+            </div>`;
+            document.getElementById('indicators').insertAdjacentHTML('afterend', catHtml);
+        }
+
         // Update last-update time
         document.getElementById('last-update').textContent = new Date().toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit'});
         // Toast on signal change
