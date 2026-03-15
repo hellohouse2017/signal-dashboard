@@ -49,8 +49,10 @@ def validate_data(df):
         val = float(latest[col])
         if val < lo or val > hi:
             warnings.append(f"⚠️ {col}={val:.2f} 超出合理範圍({lo}~{hi})，可能數據異常")
-    # 檢查是否有重複值（可能是 ffill 導致的假數據）
-    if len(df) >= 3:
+    # 檢查是否有重複值（可能是 ffill 導致的假數據）— 週末除外
+    now = datetime.utcnow() + timedelta(hours=8)
+    is_weekend = now.weekday() >= 5  # 5=六, 6=日
+    if len(df) >= 3 and not is_weekend:
         last3 = df.tail(3)
         for col in ["0050", "VIX"]:
             if col in df.columns:
