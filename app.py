@@ -996,18 +996,18 @@ def cron_signal_check():
 
         transition = f"{prev_signal}→{cur_signal}"
 
-        # 操作建議
+        # 操作建議（LONG=做多/綠, HOLD=觀望/黃, SHORT=避險/紅）
         actions = {
-            "GREEN→RED":  ("🚨🚨🚨 重大恐慌！立即加碼！",
+            "LONG→SHORT":  ("🚨🚨🚨 重大恐慌！立即加碼！",
                            "恐慌基金拿 <b>50 萬</b>，開盤市價買 <b>00631L</b>",
-                           "市場從安全→恐慌，歷史回測最佳買入時機"),
-            "YELLOW→RED": ("⚠️ 小幅加碼信號",
+                           "市場從做多→避險，歷史回測最佳買入時機"),
+            "HOLD→SHORT": ("⚠️ 小幅加碼信號",
                            "恐慌基金拿 <b>1 萬</b>，買 <b>00631L</b>",
-                           "市場從觀望→下跌，小額佈局"),
-            "RED→GREEN":  ("🎉 恐慌結束！",
+                           "市場從觀望→避險，小額佈局"),
+            "SHORT→LONG":  ("🎉 恐慌結束！",
                            "不賣出，繼續持有享受反彈",
-                           "市場恢復安全，加碼部位開始獲利"),
-            "RED→YELLOW": ("🟡 市場回穩中",
+                           "市場恢復做多，加碼部位開始獲利"),
+            "SHORT→HOLD": ("🟡 市場回穩中",
                            "不動作，繼續觀察",
                            "從恐慌回暖，尚未完全安全"),
         }
@@ -1025,7 +1025,7 @@ def cron_signal_check():
             return jsonify({"notified": True, "transition": transition, "action": action})
         else:
             # 每日簡報（非緊急）
-            emoji = {"GREEN": "🟢", "YELLOW": "🟡", "RED": "🔴"}.get(cur_signal, "⚪")
+            emoji = {"LONG": "🟢", "HOLD": "🟡", "SHORT": "🔴"}.get(cur_signal, "⚪")
             msg = (f"{emoji} 每日信號：{cur_signal}\n"
                    f"📈 0050：{price_0050} 元｜評分：{cur_score:+.1f}\n"
                    f"😎 今日不需操作")

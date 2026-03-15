@@ -487,21 +487,21 @@ async function loadSignal() {
         const prev = d.prev_signal || cur;
         const transition = prev + '→' + cur;
         const actionMap = {
-            'GREEN→RED':   { icon: '🚨', color: 'var(--red)',    bg: 'rgba(239,68,68,0.15)',  border: 'rgba(239,68,68,0.4)',
+            'LONG→SHORT':   { icon: '🚨', color: 'var(--red)',    bg: 'rgba(239,68,68,0.15)',  border: 'rgba(239,68,68,0.4)',
                              title: '重大恐慌！立即加碼', action: '恐慌基金拿 50 萬，開盤市價買 00631L',
-                             reason: '市場從安全轉為恐慌，歷史回測顯示這是最佳買入時機（G→R alpha 最高）' },
-            'YELLOW→RED':  { icon: '⚠️', color: 'var(--red)',    bg: 'rgba(239,68,68,0.1)',   border: 'rgba(239,68,68,0.3)',
+                             reason: '市場從做多轉為避險，歷史回測顯示這是最佳買入時機' },
+            'HOLD→SHORT':  { icon: '⚠️', color: 'var(--red)',    bg: 'rgba(239,68,68,0.1)',   border: 'rgba(239,68,68,0.3)',
                              title: '小幅加碼', action: '恐慌基金拿 1 萬，買 00631L',
-                             reason: '市場從觀望轉為下跌，小額佈局' },
-            'RED→RED':     { icon: '🔴', color: 'var(--text2)',  bg: 'rgba(239,68,68,0.05)',  border: 'var(--border)',
-                             title: '持續紅燈，不動作', action: '什麼都不做，保持持有',
-                             reason: '已在前次紅燈加碼，連續紅不重複買入' },
-            'RED→GREEN':   { icon: '🎉', color: 'var(--green)',  bg: 'rgba(16,185,129,0.1)',  border: 'rgba(16,185,129,0.3)',
+                             reason: '市場從觀望轉為避險，小額佈局' },
+            'SHORT→SHORT':     { icon: '🔴', color: 'var(--text2)',  bg: 'rgba(239,68,68,0.05)',  border: 'var(--border)',
+                             title: '持續避險，不動作', action: '什麼都不做，保持持有',
+                             reason: '已在前次避險加碼，連續避險不重複買入' },
+            'SHORT→LONG':   { icon: '🎉', color: 'var(--green)',  bg: 'rgba(16,185,129,0.1)',  border: 'rgba(16,185,129,0.3)',
                              title: '恐慌結束！繼續持有', action: '不賣出，享受反彈',
-                             reason: '市場恢復安全，之前加碼的部位開始獲利' },
-            'RED→YELLOW':  { icon: '🟡', color: 'var(--yellow)', bg: 'rgba(245,158,11,0.1)',  border: 'rgba(245,158,11,0.3)',
+                             reason: '市場恢復做多，之前加碼的部位開始獲利' },
+            'SHORT→HOLD':  { icon: '🟡', color: 'var(--yellow)', bg: 'rgba(245,158,11,0.1)',  border: 'rgba(245,158,11,0.3)',
                              title: '市場回穩中', action: '不動作，繼續觀察',
-                             reason: '從恐慌中回暖，但尚未完全安全' },
+                             reason: '從避險中回暖，但尚未完全安全' },
         };
         // 默認：不動作
         const defaultAction = { icon: '😎', color: 'var(--green)', bg: 'rgba(16,185,129,0.05)', border: 'var(--border)',
