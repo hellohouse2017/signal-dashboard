@@ -339,31 +339,71 @@ def _safe_close(df, ticker):
 TICKER_MAP = {
     "0050":  [("0050.TW", None)],
     "VIX":   [("^VIX", None)],
-    "DXY":   [("DX-Y.NYB", None), ("UUP", lambda s: s / s.iloc[-1] * 103)],  # UUP 縮放到 DXY 量級
-    "Oil":   [("CL=F", None), ("USO", lambda s: s / s.iloc[-1] * 70)],       # USO 縮放到 Oil 量級
-    "Gold":  [("GC=F", None), ("GLD", lambda s: s / s.iloc[-1] * 3000)],     # GLD 縮放到 Gold 量級
+    "DXY":   [("DX-Y.NYB", None), ("UUP", lambda s: s / s.iloc[-1] * 103)],
+    "Oil":   [("CL=F", None), ("USO", lambda s: s / s.iloc[-1] * 70)],
+    "Gold":  [("GC=F", None), ("GLD", lambda s: s / s.iloc[-1] * 3000)],
     "Yield": [("^TNX", None)],
 }
 
-def _fetch_with_fallback(name, period=None, start=None, end=None):
-    """嘗試主要 ticker，失敗則用備用"""
+# 更嚴格的範圍檢查（用於防止欄位混淆）
+STRICT_RANGES = {
+    "0050":  (20, 200),
+    "VIX":   (5, 60),       # VIX 很少超過 60
+    "DXY":   (85, 120),     # 近年 DXY 在 90-115
+    "Oil":   (30, 150),     # 近年油價 40-130
+    "Gold":  (1500, 8000),  # 近年金價 1800-5000+
+    "Yield": (1.0, 6.0),    # 近年殖利率 1-5%
+}
+
+def _isolated_download(ticker, period=None, start=None, end=None):
+    """完全隔離的下載：用獨立 Ticker 物件避免 session cache 污染"""
+    try:
+        t = yf.Ticker(ticker)
+        if period:
+            d = t.history(period=period)
+        else:
+            d = t.history(start=start, end=end)
+        if d is None or len(d) == 0:
+            return None
+        if 'Close' in d.columns:
+            return d['Close'].copy()
+        return None
+    except:
+        # fallback 用 download
+        try:
+            d = yf.download(ticker, period=period, start=start, end=end,
+                           progress=False, auto_adjust=True)
+            return _safe_close(d, ticker)
+        except:
+            return None
+
+def _fetch_with_fallback(name, period=None, start=None, end=None, prev_values=None):
+    """嘗試主要 ticker，失敗則用備用。prev_values 防止欄位混淆"""
     candidates = TICKER_MAP.get(name, [])
+    strict = STRICT_RANGES.get(name, SANE_RANGES.get(name))
+
     for ticker, transform in candidates:
         try:
-            if period:
-                d = yf.download(ticker, period=period, progress=False, auto_adjust=True)
-            else:
-                d = yf.download(ticker, start=start, end=end, progress=False, auto_adjust=True)
-            series = _safe_close(d, ticker)
+            series = _isolated_download(ticker, period=period, start=start, end=end)
             if series is not None and len(series) > 0:
                 if transform:
                     series = transform(series)
                 last_val = float(series.iloc[-1])
-                if name in SANE_RANGES:
-                    lo, hi = SANE_RANGES[name]
+
+                # 嚴格範圍檢查
+                if strict:
+                    lo, hi = strict
                     if last_val < lo or last_val > hi:
-                        print(f"[WARN] {name}={last_val:.2f} from {ticker} out of range({lo}~{hi}), trying next")
+                        print(f"[WARN] {name}={last_val:.2f} from {ticker} out of strict range({lo}~{hi})")
                         continue
+
+                # 防止 cache 污染：值不能跟之前下載的一樣
+                if prev_values:
+                    for prev_name, prev_val in prev_values.items():
+                        if abs(last_val - prev_val) < 0.01 and name != prev_name:
+                            print(f"[WARN] {name}={last_val:.2f} same as {prev_name}, cache contamination!")
+                            continue
+
                 print(f"[OK] {name} fetched from {ticker}: {last_val:.2f}")
                 return series
         except Exception as e:
@@ -373,7 +413,7 @@ def _fetch_with_fallback(name, period=None, start=None, end=None):
     return None
 
 def fetch_data(period="3mo"):
-    """下載市場數據（逐一下載 + 備用源），含 cache + 異常自動清除"""
+    """下載市場數據（隔離下載 + 備用源 + 防污染），含 cache"""
     cache_key = f"fetch_data_{period}"
     cached = cache_get(cache_key)
     if cached is not None:
@@ -384,21 +424,25 @@ def fetch_data(period="3mo"):
             _cache.pop(cache_key, None)
 
     data = {}
+    prev_values = {}
     for name in TICKER_MAP:
-        series = _fetch_with_fallback(name, period=period)
+        series = _fetch_with_fallback(name, period=period, prev_values=prev_values)
         if series is not None:
             data[name] = series
+            prev_values[name] = float(series.iloc[-1])
     result = pd.DataFrame(data).ffill().dropna()
     cache_set(cache_key, result)
     return result
 
 def fetch_data_range(start, end):
-    """按日期範圍下載（含備用源）"""
+    """按日期範圍下載（含備用源 + 防污染）"""
     data = {}
+    prev_values = {}
     for name in TICKER_MAP:
-        series = _fetch_with_fallback(name, start=start, end=end)
+        series = _fetch_with_fallback(name, start=start, end=end, prev_values=prev_values)
         if series is not None:
             data[name] = series
+            prev_values[name] = float(series.iloc[-1])
     return pd.DataFrame(data).ffill().dropna()
 
 def add_indicators(df):
