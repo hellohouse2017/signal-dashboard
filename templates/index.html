@@ -255,7 +255,57 @@
         </div>
         <div id="strategies-list"></div>
 
+        <!-- 回測結果 -->
         <div class="section" style="margin-top:24px">
+            <h2>📊 災難出場回測結果（11年，2014-2025）</h2>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:12px">
+                <div>
+                    <div style="font-size:14px;font-weight:700;margin-bottom:8px">0050</div>
+                    <table style="font-size:13px">
+                        <tr><td style="color:var(--text2);padding:4px 8px">總投入</td><td style="padding:4px 8px;font-weight:600">915 萬</td></tr>
+                        <tr><td style="color:var(--text2);padding:4px 8px">買持投報</td><td style="padding:4px 8px">+164%</td></tr>
+                        <tr><td style="color:var(--text2);padding:4px 8px">策略投報</td><td style="padding:4px 8px;color:var(--green);font-weight:700">+326%</td></tr>
+                        <tr><td style="color:var(--text2);padding:4px 8px">策略淨賺</td><td style="padding:4px 8px;color:var(--green);font-weight:700">+2,987 萬</td></tr>
+                    </table>
+                </div>
+                <div>
+                    <div style="font-size:14px;font-weight:700;margin-bottom:8px">00631L 正2 🚀</div>
+                    <table style="font-size:13px">
+                        <tr><td style="color:var(--text2);padding:4px 8px">總投入</td><td style="padding:4px 8px;font-weight:600">915 萬</td></tr>
+                        <tr><td style="color:var(--text2);padding:4px 8px">買持投報</td><td style="padding:4px 8px">+499%</td></tr>
+                        <tr><td style="color:var(--text2);padding:4px 8px">策略投報</td><td style="padding:4px 8px;color:var(--green);font-weight:700">+1,594%</td></tr>
+                        <tr><td style="color:var(--text2);padding:4px 8px">策略淨賺</td><td style="padding:4px 8px;color:var(--green);font-weight:700">+14,587 萬</td></tr>
+                    </table>
+                </div>
+            </div>
+            <div style="margin-top:12px;font-size:12px;color:var(--text2)">
+                規則：5取3出場 + 4取3進場 + 5日冷卻 + 20萬/次加碼（65萬/年恐慌基金）<br>
+                最差滑價測試：0050 +264% / 正2 +988%（買日高/賣日低）
+            </div>
+        </div>
+
+        <!-- 操作紀錄 -->
+        <div class="section" style="margin-top:24px">
+            <h2>📋 實際操作紀錄 vs 回測預期 <button class="btn btn-outline btn-sm" onclick="resetOps()" style="margin-left:auto;font-size:11px">🗑️ 清除</button></h2>
+            <div id="ops-summary" style="margin-bottom:16px"></div>
+            <div style="background:var(--bg2);border-radius:12px;padding:16px;margin-bottom:16px">
+                <div style="font-size:13px;font-weight:600;margin-bottom:10px">➕ 新增操作</div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+                    <div class="form-group"><label>日期</label><input type="date" id="ops-date" style="width:140px"></div>
+                    <div class="form-group"><label>類型</label>
+                        <select id="ops-type"><option value="exit">🔴 出場</option><option value="entry">🟢 進場+加碼</option></select>
+                    </div>
+                    <div class="form-group"><label>0050 價格</label><input type="number" id="ops-price" step="0.01" style="width:100px"></div>
+                    <div class="form-group"><label>加碼金額(萬)</label><input type="number" id="ops-add" value="20" step="1" style="width:80px"></div>
+                    <div class="form-group"><label>出場分</label><input type="number" id="ops-exit-score" min="0" max="5" style="width:60px"></div>
+                    <div class="form-group"><label>進場分</label><input type="number" id="ops-entry-score" min="0" max="4" style="width:60px"></div>
+                    <div class="form-group"><label>備註</label><input type="text" id="ops-note" style="width:120px"></div>
+                    <button class="btn btn-primary btn-sm" onclick="addOps()">💾 記錄</button>
+                </div>
+            </div>
+            <div id="ops-table"></div>
+        </div>
+
             <h2>⚙️ 數據源設定</h2>
             <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:20px">
                 <div class="stat-card"><div class="label">🟢 主要來源</div><div class="val" style="font-size:14px;color:var(--green)">yfinance ✅</div></div>
@@ -793,7 +843,7 @@ async function loadStrategies() {
         const statusBadge = isActive ? '<span class="badge green">運行中</span>' : '<span class="badge purple">規劃中</span>';
         const metrics = isActive ? `
             <div class="strategy-metrics">
-                <div class="metric"><div class="v">${s.backtest_annual}</div><div class="l">年均報酬</div></div>
+                <div class="metric"><div class="v">${s.backtest_annual}</div><div class="l">回測報酬</div></div>
                 <div class="metric"><div class="v">${s.backtest_sharpe}</div><div class="l">Sharpe</div></div>
                 <div class="metric"><div class="v">${s.indicators}</div><div class="l">指標數</div></div>
             </div>` : `<div style="margin-top:8px;font-size:12px;color:var(--text2)">${s.note||''}</div>`;
@@ -811,6 +861,7 @@ async function loadStrategies() {
     });
     document.getElementById('strategies-list').innerHTML = html;
     loadConfig();
+    loadOps();
 }
 
 async function loadConfig() {
@@ -1017,6 +1068,65 @@ function renderPriceChart(data) {
             }
         }
     });
+}
+
+// ===== Operations Log =====
+async function loadOps() {
+    try {
+        const res = await fetch('/api/ops');
+        const d = await res.json();
+        const s = d.summary;
+        // Summary
+        if (d.ops.length > 0) {
+            const pnlColor = s.pnl >= 0 ? 'var(--green)' : 'var(--red)';
+            document.getElementById('ops-summary').innerHTML = `
+            <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">
+                <div class="stat-card"><div class="label">總投入</div><div class="val" style="font-size:16px">${num(s.total_invested)} 萬</div></div>
+                <div class="stat-card"><div class="label">加碼總額</div><div class="val" style="font-size:16px;color:var(--blue)">${num(s.total_added)} 萬</div></div>
+                <div class="stat-card"><div class="label">當前市值</div><div class="val" style="font-size:16px">${num(s.market_value)} 萬</div></div>
+                <div class="stat-card"><div class="label">損益</div><div class="val" style="font-size:16px;color:${pnlColor}">${s.pnl>0?'+':''}${num(s.pnl)} 萬 (${s.pnl_pct>0?'+':''}${s.pnl_pct}%)</div></div>
+            </div>`;
+        } else {
+            document.getElementById('ops-summary').innerHTML = '<p style="color:var(--text2);text-align:center;padding:12px">尚無操作紀錄，等待第一次出場/進場觸發</p>';
+        }
+        // Table
+        if (d.ops.length > 0) {
+            let html = '<table><thead><tr><th>#</th><th>日期</th><th>類型</th><th>價格</th><th>加碼</th><th>出場分</th><th>進場分</th><th>備註</th></tr></thead><tbody>';
+            d.ops.slice().reverse().forEach(op => {
+                const typeLabel = op.type === 'exit' ? '<span class="badge red">出場</span>' : '<span class="badge green">進場+加碼</span>';
+                html += `<tr>
+                    <td>${op.id}</td><td>${op.date}</td><td>${typeLabel}</td>
+                    <td>${op.price}</td><td>${op.add_amount ? op.add_amount + '萬' : '—'}</td>
+                    <td>${op.exit_score}/5</td><td>${op.entry_score}/4</td>
+                    <td style="color:var(--text2);font-size:12px">${op.note||''}</td>
+                </tr>`;
+            });
+            document.getElementById('ops-table').innerHTML = html + '</tbody></table>';
+        } else {
+            document.getElementById('ops-table').innerHTML = '';
+        }
+    } catch(e) {}
+}
+
+async function addOps() {
+    const data = {
+        date: document.getElementById('ops-date').value || new Date().toISOString().slice(0,10),
+        type: document.getElementById('ops-type').value,
+        price: parseFloat(document.getElementById('ops-price').value) || 0,
+        add_amount: parseFloat(document.getElementById('ops-add').value) || 0,
+        exit_score: parseInt(document.getElementById('ops-exit-score').value) || 0,
+        entry_score: parseInt(document.getElementById('ops-entry-score').value) || 0,
+        note: document.getElementById('ops-note').value,
+    };
+    if (!data.price) { alert('請輸入價格'); return; }
+    await fetch('/api/ops', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+    loadOps();
+}
+
+async function resetOps() {
+    if (!confirm('確定要清除所有操作紀錄？')) return;
+    await fetch('/api/ops/reset', {method:'POST'});
+    loadOps();
 }
 
 // ===== Auto-Refresh Countdown =====

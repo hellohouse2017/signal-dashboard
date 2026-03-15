@@ -980,6 +980,16 @@ STRATEGIES = [
         "backtest_sharpe": "3.84",
     },
     {
+        "id": "catastrophe_exit",
+        "name": "災難出場 v1",
+        "description": "5取3出場 + 4取3進場 + 5日冷卻 + 20萬加碼",
+        "status": "active",
+        "version": "1.0",
+        "indicators": 5,
+        "backtest_annual": "+326%（11年）",
+        "backtest_sharpe": "—",
+    },
+    {
         "id": "trump_code",
         "name": "川普密碼",
         "description": "Truth Social 貼文分析 × S&P 500 預測模型",
@@ -1036,6 +1046,71 @@ def api_set_config():
 @app.route("/api/strategies")
 def get_strategies():
     return jsonify(STRATEGIES)
+
+# ===== 操作紀錄 (Operations Log) =====
+OPS_LOG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "ops_log.json")
+
+@app.route("/api/ops", methods=["GET"])
+def get_ops_log():
+    """取得操作紀錄"""
+    ops = load_json(OPS_LOG_FILE, [])
+    # 計算累計投入和當前市值
+    total_invested = 0
+    total_shares = 0
+    total_added = 0
+    for op in ops:
+        if op.get("type") == "entry":
+            total_invested += op.get("amount", 0)
+            total_shares += op.get("shares", 0)
+            total_added += op.get("add_amount", 0)
+        elif op.get("type") == "exit":
+            total_shares = 0  # 全部賣出
+    # 取得當前價格
+    try:
+        df = fetch_data("5d")
+        current_price = round(df["0050"].iloc[-1], 2) if len(df) > 0 else 0
+    except:
+        current_price = 0
+    market_val = total_shares * current_price if total_shares > 0 else 0
+    return jsonify({
+        "ops": ops,
+        "summary": {
+            "total_invested": total_invested,
+            "total_added": total_added,
+            "total_shares": total_shares,
+            "current_price": current_price,
+            "market_value": round(market_val, 0),
+            "pnl": round(market_val - total_invested, 0),
+            "pnl_pct": round((market_val / total_invested - 1) * 100, 1) if total_invested > 0 else 0,
+        }
+    })
+
+@app.route("/api/ops", methods=["POST"])
+def add_ops_log():
+    """新增操作紀錄"""
+    data = request.get_json()
+    ops = load_json(OPS_LOG_FILE, [])
+    entry = {
+        "id": len(ops) + 1,
+        "date": data.get("date", datetime.now().strftime("%Y-%m-%d")),
+        "type": data.get("type", "entry"),  # entry / exit
+        "price": data.get("price", 0),
+        "shares": data.get("shares", 0),
+        "amount": data.get("amount", 0),
+        "add_amount": data.get("add_amount", 0),  # 加碼金額
+        "exit_score": data.get("exit_score", 0),
+        "entry_score": data.get("entry_score", 0),
+        "note": data.get("note", ""),
+    }
+    ops.append(entry)
+    save_json(OPS_LOG_FILE, ops)
+    return jsonify({"ok": True, "entry": entry})
+
+@app.route("/api/ops/reset", methods=["POST"])
+def reset_ops_log():
+    """清除操作紀錄"""
+    save_json(OPS_LOG_FILE, [])
+    return jsonify({"ok": True})
 
 # ===== Telegram 通知 =====
 import urllib.request as urlreq
