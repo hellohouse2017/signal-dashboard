@@ -1037,7 +1037,7 @@ def api_get_config():
 def api_set_config():
     data = request.get_json()
     cfg = get_config()
-    for key in ["fred_api_key", "alpha_vantage_key", "polygon_key"]:
+    for key in ["fred_api_key", "alpha_vantage_key", "polygon_key", "tg_bot_token", "tg_chat_id"]:
         if key in data:
             cfg[key] = data[key].strip()
     save_config(cfg)
@@ -1116,9 +1116,13 @@ def reset_ops_log():
 import urllib.request as urlreq
 
 def send_telegram(message):
-    """發送 Telegram 訊息"""
+    """發送 Telegram 訊息（優先 env，再讀 config.json）"""
     token = os.environ.get("TG_BOT_TOKEN", "")
     chat_id = os.environ.get("TG_CHAT_ID", "")
+    if not token or not chat_id:
+        cfg = get_config()
+        token = token or cfg.get("tg_bot_token", "")
+        chat_id = chat_id or cfg.get("tg_chat_id", "")
     if not token or not chat_id:
         print("[TG] Missing TG_BOT_TOKEN or TG_CHAT_ID")
         return False
