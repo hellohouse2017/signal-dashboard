@@ -323,8 +323,45 @@ def _safe_close(df, ticker):
         pass
     return None
 
+# 主要 ticker + 備用 ticker（雲端伺服器有時抓不到期貨/外匯）
+TICKER_MAP = {
+    "0050":  [("0050.TW", None)],
+    "VIX":   [("^VIX", None)],
+    "DXY":   [("DX-Y.NYB", None), ("UUP", lambda s: s / s.iloc[-1] * 103)],  # UUP 縮放到 DXY 量級
+    "Oil":   [("CL=F", None), ("USO", lambda s: s / s.iloc[-1] * 70)],       # USO 縮放到 Oil 量級
+    "Gold":  [("GC=F", None), ("GLD", lambda s: s / s.iloc[-1] * 3000)],     # GLD 縮放到 Gold 量級
+    "Yield": [("^TNX", None)],
+}
+
+def _fetch_with_fallback(name, period=None, start=None, end=None):
+    """嘗試主要 ticker，失敗則用備用"""
+    candidates = TICKER_MAP.get(name, [])
+    for ticker, transform in candidates:
+        try:
+            if period:
+                d = yf.download(ticker, period=period, progress=False, auto_adjust=True)
+            else:
+                d = yf.download(ticker, start=start, end=end, progress=False, auto_adjust=True)
+            series = _safe_close(d, ticker)
+            if series is not None and len(series) > 0:
+                if transform:
+                    series = transform(series)
+                last_val = float(series.iloc[-1])
+                if name in SANE_RANGES:
+                    lo, hi = SANE_RANGES[name]
+                    if last_val < lo or last_val > hi:
+                        print(f"[WARN] {name}={last_val:.2f} from {ticker} out of range({lo}~{hi}), trying next")
+                        continue
+                print(f"[OK] {name} fetched from {ticker}: {last_val:.2f}")
+                return series
+        except Exception as e:
+            print(f"[ERR] {name} from {ticker}: {e}")
+            continue
+    print(f"[FAIL] {name}: all sources failed")
+    return None
+
 def fetch_data(period="3mo"):
-    """下載市場數據（逐一下載，避免欄位錯位），含 cache + 異常自動清除"""
+    """下載市場數據（逐一下載 + 備用源），含 cache + 異常自動清除"""
     cache_key = f"fetch_data_{period}"
     cached = cache_get(cache_key)
     if cached is not None:
@@ -332,46 +369,24 @@ def fetch_data(period="3mo"):
         if passed:
             return cached
         else:
-            _cache.pop(cache_key, None)  # 清除異常 cache
+            _cache.pop(cache_key, None)
 
-    tickers = {
-        "0050": "0050.TW", "VIX": "^VIX", "DXY": "DX-Y.NYB",
-        "Oil": "CL=F", "Gold": "GC=F", "Yield": "^TNX",
-    }
     data = {}
-    for name, ticker in tickers.items():
-        try:
-            d = yf.download(ticker, period=period, progress=False, auto_adjust=True)
-            series = _safe_close(d, ticker)
-            if series is not None and len(series) > 0:
-                last_val = float(series.iloc[-1])
-                if name in SANE_RANGES:
-                    lo, hi = SANE_RANGES[name]
-                    if last_val < lo or last_val > hi:
-                        print(f"[WARN] {name}={last_val:.2f} out of range({lo}~{hi}), skipping")
-                        continue
-                data[name] = series
-        except:
-            pass
+    for name in TICKER_MAP:
+        series = _fetch_with_fallback(name, period=period)
+        if series is not None:
+            data[name] = series
     result = pd.DataFrame(data).ffill().dropna()
     cache_set(cache_key, result)
     return result
 
 def fetch_data_range(start, end):
-    """按日期範圍下載"""
-    tickers = {
-        "0050": "0050.TW", "VIX": "^VIX", "DXY": "DX-Y.NYB",
-        "Oil": "CL=F", "Gold": "GC=F", "Yield": "^TNX",
-    }
+    """按日期範圍下載（含備用源）"""
     data = {}
-    for name, ticker in tickers.items():
-        try:
-            d = yf.download(ticker, start=start, end=end, progress=False, auto_adjust=True)
-            series = _safe_close(d, ticker)
-            if series is not None and len(series) > 0:
-                data[name] = series
-        except:
-            pass
+    for name in TICKER_MAP:
+        series = _fetch_with_fallback(name, start=start, end=end)
+        if series is not None:
+            data[name] = series
     return pd.DataFrame(data).ffill().dropna()
 
 def add_indicators(df):
