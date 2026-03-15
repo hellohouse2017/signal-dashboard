@@ -2,8 +2,9 @@ name: Signal Check & TG Notify
 
 on:
   schedule:
-    # 每天 22:00 UTC = 台灣 06:00 AM（美股收盤後），週一到週五
-    - cron: '0 22 * * 1-5'
+    # 每天 22:00 UTC = 台灣 06:00 AM（美股收盤後）
+    # UTC 週日~四 = 台灣時間週一~五
+    - cron: '0 22 * * 0-4'
   workflow_dispatch:  # 可手動觸發
 
 jobs:
