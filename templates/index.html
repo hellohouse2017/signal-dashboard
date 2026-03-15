@@ -480,9 +480,56 @@ async function loadSignal() {
             <div class="price-info">0050 收盤價：<strong>${d.price} 元</strong></div>
             ${d.data_valid ? '<div style="margin-top:8px;font-size:12px;color:var(--green)">✅ 數據驗證通過' + (d.cross_validation?.length ? ' | 交叉比對：' + d.cross_validation.map(cv => `${cv.name}(${cv.source}:${cv.diff_pct < 1 ? '✅' : cv.diff_pct < 5 ? '⚠️' : '❌'}${cv.diff_pct}%)`).join(' ') : ' | TWSE 備援自動啟用') + '</div>' : ''}
             ${freshnessHtml}`;
+
+        // ===== 今日操作建議 =====
+        let actionCard = '';
+        const cur = d.signal;
+        const prev = d.prev_signal || cur;
+        const transition = prev + '→' + cur;
+        const actionMap = {
+            'GREEN→RED':   { icon: '🚨', color: 'var(--red)',    bg: 'rgba(239,68,68,0.15)',  border: 'rgba(239,68,68,0.4)',
+                             title: '重大恐慌！立即加碼', action: '恐慌基金拿 50 萬，開盤市價買 00631L',
+                             reason: '市場從安全轉為恐慌，歷史回測顯示這是最佳買入時機（G→R alpha 最高）' },
+            'YELLOW→RED':  { icon: '⚠️', color: 'var(--red)',    bg: 'rgba(239,68,68,0.1)',   border: 'rgba(239,68,68,0.3)',
+                             title: '小幅加碼', action: '恐慌基金拿 1 萬，買 00631L',
+                             reason: '市場從觀望轉為下跌，小額佈局' },
+            'RED→RED':     { icon: '🔴', color: 'var(--text2)',  bg: 'rgba(239,68,68,0.05)',  border: 'var(--border)',
+                             title: '持續紅燈，不動作', action: '什麼都不做，保持持有',
+                             reason: '已在前次紅燈加碼，連續紅不重複買入' },
+            'RED→GREEN':   { icon: '🎉', color: 'var(--green)',  bg: 'rgba(16,185,129,0.1)',  border: 'rgba(16,185,129,0.3)',
+                             title: '恐慌結束！繼續持有', action: '不賣出，享受反彈',
+                             reason: '市場恢復安全，之前加碼的部位開始獲利' },
+            'RED→YELLOW':  { icon: '🟡', color: 'var(--yellow)', bg: 'rgba(245,158,11,0.1)',  border: 'rgba(245,158,11,0.3)',
+                             title: '市場回穩中', action: '不動作，繼續觀察',
+                             reason: '從恐慌中回暖，但尚未完全安全' },
+        };
+        // 默認：不動作
+        const defaultAction = { icon: '😎', color: 'var(--green)', bg: 'rgba(16,185,129,0.05)', border: 'var(--border)',
+                                title: '一切正常，不需操作', action: '關掉 Dashboard，去忙別的',
+                                reason: `目前信號：${cur}，無需任何動作` };
+        const act = actionMap[transition] || defaultAction;
+        actionCard = `<div style="margin:20px 0;padding:20px;background:${act.bg};border:1px solid ${act.border};border-radius:16px;text-align:left">
+            <div style="font-size:20px;font-weight:700;color:${act.color};margin-bottom:8px">${act.icon} 今日操作：${act.title}</div>
+            <div style="font-size:16px;font-weight:600;margin-bottom:6px">👉 ${act.action}</div>
+            <div style="font-size:13px;color:var(--text2)">📊 原因：${act.reason}</div>
+            <div style="font-size:12px;color:var(--text2);margin-top:8px;opacity:0.7">信號轉換：${prev} → ${cur}</div>
+        </div>`;
+        document.getElementById('signal-hero').innerHTML += actionCard;
         let html = '';
+        const indDesc = {
+            '0050': '台灣前50大企業指數',
+            'VIX': '恐慌指數｜↑恐慌加劇 ↓市場安心',
+            'DXY': '美元強弱｜↑資金回美 ↓利好台股',
+            'Oil': '原油成本｜溫漲=經濟好 暴漲=通膨壓力',
+            'Gold': '避險情緒｜↑市場不安 ↓資金進股票',
+            'Yield': '美債殖利率｜↑升息壓力 ↓降息利多',
+            'RSI': 'RSI 相對強弱指標',
+            'MA': '均線趨勢',
+            'Momentum': '動能方向',
+        };
         d.details.forEach((ind, i) => {
-            html += `<div class="indicator-card ${ind.status} animate" style="animation-delay:${i * 0.08}s"><div class="name">${ind.name}</div><div class="value">${ind.value}</div><div class="note">${ind.status==='bullish'?'✅':ind.status==='bearish'?'⚠️':'—'} ${ind.note}</div></div>`;
+            const desc = indDesc[ind.name] || '';
+            html += `<div class="indicator-card ${ind.status} animate" style="animation-delay:${i * 0.08}s"><div class="name">${ind.name}</div><div class="value">${ind.value}</div><div class="note">${ind.status==='bullish'?'✅':ind.status==='bearish'?'⚠️':'—'} ${ind.note}</div>${desc ? `<div style="font-size:11px;color:var(--text2);margin-top:4px;border-top:1px solid var(--border);padding-top:4px">${desc}</div>` : ''}</div>`;
         });
         document.getElementById('indicators').innerHTML = html;
         window._latestPrice = d.price;
