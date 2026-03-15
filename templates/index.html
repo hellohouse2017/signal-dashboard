@@ -856,7 +856,7 @@ function showToast(msg, cls='') {
     setTimeout(() => { t.style.animation = 'toastOut 0.4s ease-in forwards'; setTimeout(() => t.remove(), 400); }, 5000);
 }
 
-// ===== Chart.js Price + Signal Chart =====
+// ===== Chart.js Price + Signal + Catastrophe Chart =====
 let _priceChart = null;
 function renderPriceChart(data) {
     if (!data || !data.length) return;
@@ -867,6 +867,15 @@ function renderPriceChart(data) {
     const labels = data.map(d => d.date.slice(5)); // MM-DD
     const prices = data.map(d => d.price);
     const ma20 = data.map(d => d.ma20);
+    const ma60 = data.map(d => d.ma60);
+    const ma120 = data.map(d => d.ma120);
+
+    // 出場/進場標記點（exit_score>=3 紅三角, entry_score>=3 綠三角）
+    const exitMarkers = data.map(d => d.exit_score >= 3 ? d.price : null);
+    const entryMarkers = data.map(d => d.entry_score >= 3 ? d.price : null);
+    // 預警點（exit_score==2)
+    const warnMarkers = data.map(d => d.exit_score === 2 ? d.price : null);
+
     const signalColors = data.map(d => d.signal === 'LONG' ? 'rgba(16,185,129,0.12)' : d.signal === 'SHORT' ? 'rgba(239,68,68,0.12)' : 'rgba(245,158,11,0.08)');
 
     _priceChart = new Chart(ctx, {
@@ -885,9 +894,10 @@ function renderPriceChart(data) {
                     pointBorderWidth: 0,
                     tension: 0.3,
                     fill: false,
+                    order: 2,
                 },
                 {
-                    label: 'MA20',
+                    label: 'MA20（20日均線）',
                     data: ma20,
                     borderColor: '#8b5cf6',
                     borderWidth: 1.5,
@@ -895,6 +905,64 @@ function renderPriceChart(data) {
                     pointRadius: 0,
                     tension: 0.3,
                     fill: false,
+                    order: 3,
+                },
+                {
+                    label: 'MA60（60日均線・進場參考）',
+                    data: ma60,
+                    borderColor: '#f59e0b',
+                    borderWidth: 1.5,
+                    borderDash: [4, 4],
+                    pointRadius: 0,
+                    tension: 0.3,
+                    fill: false,
+                    order: 3,
+                },
+                {
+                    label: 'MA120×0.97（出場警戒線）',
+                    data: ma120.map(v => v ? +(v * 0.97).toFixed(2) : null),
+                    borderColor: '#ef4444',
+                    borderWidth: 2,
+                    borderDash: [8, 4],
+                    pointRadius: 0,
+                    tension: 0.3,
+                    fill: false,
+                    order: 3,
+                },
+                {
+                    label: '🔴 出場觸發（≥3/5）',
+                    data: exitMarkers,
+                    borderColor: 'transparent',
+                    backgroundColor: '#ef4444',
+                    pointRadius: data.map(d => d.exit_score >= 3 ? 10 : 0),
+                    pointStyle: 'triangle',
+                    pointRotation: 180,
+                    borderWidth: 0,
+                    showLine: false,
+                    order: 1,
+                },
+                {
+                    label: '⚠️ 出場預警（2/5）',
+                    data: warnMarkers,
+                    borderColor: 'transparent',
+                    backgroundColor: '#f59e0b',
+                    pointRadius: data.map(d => d.exit_score === 2 ? 7 : 0),
+                    pointStyle: 'triangle',
+                    pointRotation: 180,
+                    borderWidth: 0,
+                    showLine: false,
+                    order: 1,
+                },
+                {
+                    label: '🟢 安全進場（≥3/4）',
+                    data: entryMarkers,
+                    borderColor: 'transparent',
+                    backgroundColor: '#10b981',
+                    pointRadius: data.map(d => d.entry_score >= 3 ? 10 : 0),
+                    pointStyle: 'triangle',
+                    borderWidth: 0,
+                    showLine: false,
+                    order: 1,
                 },
                 {
                     label: '信號區間',
@@ -903,6 +971,7 @@ function renderPriceChart(data) {
                     borderWidth: 0,
                     pointRadius: 0,
                     fill: 'origin',
+                    order: 4,
                 },
             ],
         },
@@ -911,7 +980,18 @@ function renderPriceChart(data) {
             maintainAspectRatio: false,
             interaction: { intersect: false, mode: 'index' },
             plugins: {
-                legend: { display: false },
+                legend: {
+                    display: true,
+                    position: 'bottom',
+                    labels: {
+                        color: '#94a3b8',
+                        font: { size: 11, family: 'Inter' },
+                        padding: 12,
+                        usePointStyle: true,
+                        pointStyleWidth: 12,
+                        filter: (item) => item.text !== '信號區間',
+                    }
+                },
                 tooltip: {
                     backgroundColor: '#1a1f2e',
                     borderColor: '#2d3748',
@@ -921,7 +1001,12 @@ function renderPriceChart(data) {
                     callbacks: {
                         afterBody: (items) => {
                             const i = items[0]?.dataIndex;
-                            if (i != null) return `信號: ${data[i].label}（${data[i].score > 0 ? '+' : ''}${data[i].score}）`;
+                            if (i != null) {
+                                const d2 = data[i];
+                                let lines = [`信號: ${d2.label}（${d2.score > 0 ? '+' : ''}${d2.score}）`];
+                                lines.push(`出場: ${d2.exit_score}/5 ${d2.exit_score>=3?'🚨':''}  進場: ${d2.entry_score}/4 ${d2.entry_score>=3?'✅':''}`);
+                                return lines;
+                            }
                         }
                     }
                 }

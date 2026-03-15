@@ -828,6 +828,7 @@ def api_history():
         history = []
         for idx, row in df.tail(30).iterrows():
             sig = calc_signal(row)
+            cat = calc_catastrophe(row)
             history.append({
                 "date": idx.strftime("%Y-%m-%d"),
                 "price": round(row["0050"], 2),
@@ -835,7 +836,11 @@ def api_history():
                 "label": sig["label"],
                 "score": sig["score"],
                 "ma20": round(row["MA20"], 2) if pd.notna(row.get("MA20")) else None,
+                "ma60": round(row["MA60"], 2) if pd.notna(row.get("MA60")) else None,
+                "ma120": round(row["MA120"], 2) if pd.notna(row.get("MA120")) else None,
                 "vix": round(row["VIX"], 2) if "VIX" in row and pd.notna(row["VIX"]) else None,
+                "exit_score": cat["exit_score"],
+                "entry_score": cat["entry_score"],
             })
         return jsonify(history)
     except Exception as e:
