@@ -82,11 +82,23 @@ def get_timing_info():
 CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "config.json")
 
 def get_config():
+    cfg = {}
     try:
         with open(CONFIG_FILE, "r") as f:
-            return json.load(f)
+            cfg = json.load(f)
     except:
-        return {}
+        pass
+    # Vercel 環境變數 fallback
+    for file_key, env_key in [
+        ("fred_api_key", "FRED_API_KEY"),
+        ("alpha_vantage_key", "ALPHA_VANTAGE_KEY"),
+        ("polygon_key", "POLYGON_KEY"),
+    ]:
+        if not cfg.get(file_key):
+            env_val = os.environ.get(env_key, "")
+            if env_val:
+                cfg[file_key] = env_val
+    return cfg
 
 def save_config(cfg):
     os.makedirs(os.path.dirname(CONFIG_FILE), exist_ok=True)
