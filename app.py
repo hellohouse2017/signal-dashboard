@@ -952,6 +952,90 @@ def api_set_config():
 def get_strategies():
     return jsonify(STRATEGIES)
 
+# ===== Telegram 通知 =====
+import urllib.request as urlreq
+
+def send_telegram(message):
+    """發送 Telegram 訊息"""
+    token = os.environ.get("TG_BOT_TOKEN", "")
+    chat_id = os.environ.get("TG_CHAT_ID", "")
+    if not token or not chat_id:
+        print("[TG] Missing TG_BOT_TOKEN or TG_CHAT_ID")
+        return False
+    try:
+        url = f"https://api.telegram.org/bot{token}/sendMessage"
+        payload = json.dumps({"chat_id": chat_id, "text": message, "parse_mode": "HTML"}).encode()
+        req = urlreq.Request(url, data=payload, headers={"Content-Type": "application/json"})
+        urlreq.urlopen(req, timeout=10)
+        print(f"[TG] Sent: {message[:50]}...")
+        return True
+    except Exception as e:
+        print(f"[TG] Error: {e}")
+        return False
+
+@app.route("/api/cron/signal-check")
+def cron_signal_check():
+    """Vercel Cron：每日檢查信號並通知 Telegram"""
+    try:
+        df = fetch_data("3mo")
+        if len(df) < 20:
+            return jsonify({"error": "數據不足"}), 500
+        df = add_indicators(df)
+
+        latest = calc_signal(df.iloc[-1])
+        cur_signal = latest["signal"]
+        cur_score = latest["score"]
+        price_0050 = round(float(df.iloc[-1]["0050"]), 2)
+        date_str = df.index[-1].strftime("%Y-%m-%d")
+
+        # 取得前一天信號
+        prev_signal = cur_signal
+        if len(df) >= 2:
+            prev = calc_signal(df.iloc[-2])
+            prev_signal = prev["signal"]
+
+        transition = f"{prev_signal}→{cur_signal}"
+
+        # 操作建議
+        actions = {
+            "GREEN→RED":  ("🚨🚨🚨 重大恐慌！立即加碼！",
+                           "恐慌基金拿 <b>50 萬</b>，開盤市價買 <b>00631L</b>",
+                           "市場從安全→恐慌，歷史回測最佳買入時機"),
+            "YELLOW→RED": ("⚠️ 小幅加碼信號",
+                           "恐慌基金拿 <b>1 萬</b>，買 <b>00631L</b>",
+                           "市場從觀望→下跌，小額佈局"),
+            "RED→GREEN":  ("🎉 恐慌結束！",
+                           "不賣出，繼續持有享受反彈",
+                           "市場恢復安全，加碼部位開始獲利"),
+            "RED→YELLOW": ("🟡 市場回穩中",
+                           "不動作，繼續觀察",
+                           "從恐慌回暖，尚未完全安全"),
+        }
+
+        if transition in actions:
+            title, action, reason = actions[transition]
+            msg = (f"{title}\n\n"
+                   f"📊 信號：{transition}\n"
+                   f"📈 0050：{price_0050} 元\n"
+                   f"🎯 評分：{cur_score:+.1f}\n"
+                   f"📅 日期：{date_str}\n\n"
+                   f"👉 {action}\n"
+                   f"💡 {reason}")
+            send_telegram(msg)
+            return jsonify({"notified": True, "transition": transition, "action": action})
+        else:
+            # 每日簡報（非緊急）
+            emoji = {"GREEN": "🟢", "YELLOW": "🟡", "RED": "🔴"}.get(cur_signal, "⚪")
+            msg = (f"{emoji} 每日信號：{cur_signal}\n"
+                   f"📈 0050：{price_0050} 元｜評分：{cur_score:+.1f}\n"
+                   f"😎 今日不需操作")
+            send_telegram(msg)
+            return jsonify({"notified": True, "transition": transition, "action": "none"})
+
+    except Exception as e:
+        send_telegram(f"❌ Dashboard 異常：{str(e)}")
+        return jsonify({"error": str(e)}), 500
+
 if __name__ == "__main__":
     print("🚀 五大指標策略儀表板 v3")
     print("📊 http://localhost:5566")
