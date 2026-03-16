@@ -35,7 +35,6 @@ SANE_RANGES = {
     "Gold": (800, 15000),   # 黃金（2026 年已破 5000）
     "Yield":(0.5, 8),       # 10年殖利率
     "SMH":  (50, 500),      # 半導體 ETF
-    "00631L": (5, 500),     # 正2 ETF
 }
 
 def validate_data(df):
@@ -360,7 +359,6 @@ STRICT_RANGES = {
     "Gold":  (1500, 8000),  # 近年金價 1800-5000+
     "Yield": (1.0, 6.0),    # 近年殖利率 1-5%
     "SMH":   (100, 400),    # 近年 SMH 在 150-350
-    "00631L": (10, 300),    # 正2 合理範圍
 }
 
 def _isolated_download(ticker, period=None, start=None, end=None):
@@ -431,27 +429,42 @@ def fetch_data(period="3mo"):
         else:
             _cache.pop(cache_key, None)
 
+    # 00631L 是顯示用，不參與 dropna（台股/美股交易日不同）
+    display_only = {}
     data = {}
     prev_values = {}
     for name in TICKER_MAP:
         series = _fetch_with_fallback(name, period=period, prev_values=prev_values)
         if series is not None:
-            data[name] = series
-            prev_values[name] = float(series.iloc[-1])
+            if name == "00631L":
+                display_only[name] = series
+            else:
+                data[name] = series
+                prev_values[name] = float(series.iloc[-1])
     result = pd.DataFrame(data).ffill().dropna()
+    # 把 display-only 欄位 join 回去（允許 NaN）
+    for name, series in display_only.items():
+        result[name] = series.reindex(result.index).ffill()
     cache_set(cache_key, result)
     return result
 
 def fetch_data_range(start, end):
     """按日期範圍下載（含備用源 + 防污染）"""
+    display_only = {}
     data = {}
     prev_values = {}
     for name in TICKER_MAP:
         series = _fetch_with_fallback(name, start=start, end=end, prev_values=prev_values)
         if series is not None:
-            data[name] = series
-            prev_values[name] = float(series.iloc[-1])
-    return pd.DataFrame(data).ffill().dropna()
+            if name == "00631L":
+                display_only[name] = series
+            else:
+                data[name] = series
+                prev_values[name] = float(series.iloc[-1])
+    result = pd.DataFrame(data).ffill().dropna()
+    for name, series in display_only.items():
+        result[name] = series.reindex(result.index).ffill()
+    return result
 
 def add_indicators(df):
     """計算所有技術指標"""
