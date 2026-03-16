@@ -1192,10 +1192,23 @@ def notify_scanner_hits(hits):
 
 @app.route("/api/stock_scanner")
 def api_stock_scanner():
-    """反轉獵手 — 個股掃描"""
+    """反轉獵手 — 讀取本地掃描器的結果（MongoDB）"""
     try:
+        # 優先讀 MongoDB 全市場掃描結果
+        if _mongo_db is not None:
+            doc = _mongo_db["scan_results"].find_one({"_id": "latest"})
+            if doc:
+                doc.pop("_id", None)
+                doc["source"] = "full_market_scanner"
+                doc["strategy"] = {
+                    "name": "反轉獵手（全市場版）",
+                    "entry": "RSI>50 + 量≥1.5x + 連3天站MA20",
+                    "exit": "D++ 漸進式移動停損",
+                    "pool_size": doc.get("total", "全市場"),
+                }
+                return jsonify(doc)
+        # fallback: 用原本73支掃描
         result = scan_reversal_stocks()
-        # 盤中有命中 → TG 通知
         if result.get("hits"):
             notify_scanner_hits(result["hits"])
         return jsonify(result)
@@ -1266,13 +1279,26 @@ def paper_portfolio():
             days = (datetime.now() - datetime.strptime(pos["buy_date"], "%Y-%m-%d")).days
             pos["hold_days"] = days
 
-            # 出場信號判斷
-            if days >= 3 and ma20 > 0 and cur < ma20:
+            # D++ 漸進式移動停損
+            ret_pct = ret * 100  # 轉成百分比
+            if ret < 0 and ret_pct <= -6:
+                pos["signal"] = "🔴 固定停損 -6%"
+                pos["signal_type"] = "stop_loss"
+            elif ret_pct >= 0 and ret_pct < 10 and from_high <= -10:
+                pos["signal"] = "🟠 移動停損 -10%"
+                pos["signal_type"] = "trailing_stop"
+            elif ret_pct >= 10 and ret_pct < 20 and from_high <= -8:
+                pos["signal"] = "🟡 移動停損 -8%"
+                pos["signal_type"] = "trailing_stop"
+            elif ret_pct >= 20 and ret_pct < 50 and from_high <= -10:
+                pos["signal"] = "🟡 移動停損 -10% (飆股區)"
+                pos["signal_type"] = "trailing_stop"
+            elif ret_pct >= 50 and from_high <= -8:
+                pos["signal"] = "🟡 移動停損 -8% (超飆)"
+                pos["signal_type"] = "trailing_stop"
+            elif days >= 3 and ma20 > 0 and cur < ma20 and ret < 0:
                 pos["signal"] = "🔴 破MA20停損"
                 pos["signal_type"] = "stop_loss"
-            elif from_high <= -10 and ret > 0.03:
-                pos["signal"] = "🟡 移動停利"
-                pos["signal_type"] = "trailing_stop"
             else:
                 pos["signal"] = "✅ 持有"
                 pos["signal_type"] = "hold"
@@ -1475,14 +1501,14 @@ STRATEGIES = [
     },
     {
         "id": "reversal_hunter",
-        "name": "反轉獵手",
-        "description": "個股飆股捕捉：RSI>50 + 量≥1.5x + 連3天站MA20 | 破MA20停損 + 10%移停",
+        "name": "反轉獵手 v2",
+        "description": "全台股掃描（~1900支）| D++ 漸進式移動停損 | RSI>50 + 量≥1.5x + 連3天站MA20",
         "status": "active",
-        "version": "1.0",
+        "version": "2.0",
         "indicators": 3,
-        "backtest_annual": "+838%（5年累計）",
-        "backtest_sharpe": "賠賺比3.4",
-        "note": "73支精選股池 | 2支集中持倉 | 50萬獨立操作",
+        "backtest_annual": "勝率51.2% | 獲利因子3.54",
+        "backtest_sharpe": "平均+9.27%/筆",
+        "note": "全市場掃描 | 每支25萬 | D++退場：-6%/-10%/-8%/-10%/-8%",
     },
 ]
 

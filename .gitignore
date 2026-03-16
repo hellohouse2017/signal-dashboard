@@ -1,1 +1,6 @@
 .vercel
+scanner/market_data.db
+scanner/*.log
+data/
+__pycache__/
+*.pyc
