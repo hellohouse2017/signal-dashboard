@@ -1267,14 +1267,8 @@ async function loadHistoryAndReturn() {
         const res = await fetch('/api/history');
         const data = await res.json();
         if (!Array.isArray(data)) return [];
-        let html = '<table><thead><tr><th>日期</th><th>0050</th><th>信號</th><th>分數</th></tr></thead><tbody>';
-        data.slice().reverse().forEach(d => {
-            const c = {LONG:'green',HOLD:'yellow',SHORT:'red'};
-            html += `<tr><td>${d.date}</td><td>${d.price}</td><td><span class="badge ${c[d.signal]}">${d.label}</span></td><td>${d.score>0?'+':''}${d.score}</td></tr>`;
-        });
-        document.getElementById('history-table').innerHTML = html + '</tbody></table>';
         return data;
-    } catch(e) { document.getElementById('history-table').innerHTML = `<p style="color:var(--red)">❌ ${e.message}</p>`; return []; }
+    } catch(e) { console.error('loadHistory error:', e); return []; }
 }
 
 init();
