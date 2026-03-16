@@ -1249,8 +1249,18 @@ function startCountdown() {
             _countdown = REFRESH_INTERVAL;
             loadSignal();
             loadHistory();
+            if (isMarketHours()) scanStocks();  // 盤中自動掃描
         }
     }, 1000);
+}
+
+// 台股開盤時間 9:00-13:30
+function isMarketHours() {
+    const now = new Date();
+    const day = now.getDay();
+    if (day === 0 || day === 6) return false; // 週末
+    const hhmm = now.getHours() * 100 + now.getMinutes();
+    return hhmm >= 900 && hhmm <= 1330;
 }
 
 // ===== Init =====
@@ -1259,6 +1269,10 @@ async function init() {
     const histData = await loadHistoryAndReturn();
     renderPriceChart(histData);
     startCountdown();
+    // 盤中自動掃描
+    if (isMarketHours()) {
+        scanStocks();
+    }
 }
 
 // Modified loadHistory to also return data for chart
