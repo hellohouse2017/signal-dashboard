@@ -1305,10 +1305,6 @@ def paper_buy():
         if p["ticker"] == ticker:
             return jsonify({"error": f"已持有 {name}"}), 400
 
-    # 檢查持倉上限
-    if len(paper["positions"]) >= 2:
-        return jsonify({"error": "已滿倉（最多2支）"}), 400
-
     # 取得當前價格
     try:
         d = yf.Ticker(ticker).history(period="5d")
@@ -1319,9 +1315,8 @@ def paper_buy():
     except Exception as e:
         return jsonify({"error": str(e)}), 400
 
-    # 分配資金（平分剩餘）
-    slots = 2 - len(paper["positions"])
-    buy_amount = min(paper["cash"] / slots, paper["cash"])
+    # 每支固定買 25 萬
+    buy_amount = min(250000, paper["cash"])
     if buy_amount < 10000:
         return jsonify({"error": f"現金不足（剩 {paper['cash']:,.0f}）"}), 400
 
