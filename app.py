@@ -999,6 +999,368 @@ def reset_portfolio():
             os.remove(f)
     return jsonify({"ok": True})
 
+# ===== 反轉獵手 — 個股飆股掃描器 =====
+
+REVERSAL_POOL = {
+    # 半導體
+    "2330.TW":"台積電","2454.TW":"聯發科","3661.TW":"世芯","2379.TW":"瑞昱",
+    "3034.TW":"聯詠","6415.TW":"矽力-KY","3443.TW":"創意","2449.TW":"京元電",
+    "3711.TW":"日月光投控","2303.TW":"聯電","8046.TW":"南電","3037.TW":"欣興",
+    "6770.TW":"力積電","5269.TW":"祥碩","3563.TW":"牧德","6488.TWO":"環球晶",
+    "5274.TWO":"信驊","3374.TWO":"精材","3264.TWO":"欣銓","3105.TWO":"穩懋",
+    # AI/伺服器/散熱
+    "2382.TW":"廣達","6669.TW":"緯穎","3231.TW":"緯創","2356.TW":"英業達",
+    "3017.TW":"奇鋐","2345.TW":"智邦","4938.TW":"和碩","3706.TW":"神達",
+    "6285.TW":"啟碁","3023.TW":"信邦","2395.TW":"研華","6414.TW":"樺漢",
+    "3005.TW":"神基","8210.TW":"勤誠",
+    # 電子零組件
+    "2327.TW":"國巨","3008.TW":"大立光","2474.TW":"可成","2301.TW":"光寶科",
+    "3044.TW":"健鼎","2368.TW":"金像電","6239.TW":"力成","3653.TW":"健策",
+    "2357.TW":"華碩","3665.TW":"貿聯-KY","2492.TW":"華新科",
+    # 光電/面板
+    "3406.TW":"玉晶光","6278.TW":"台表科","2409.TW":"友達","3481.TW":"群創",
+    "8039.TW":"台虹","8069.TWO":"元太",
+    # 航運
+    "2603.TW":"長榮","2609.TW":"陽明","2615.TW":"萬海","2618.TW":"長榮航",
+    # 鴻海/台達電/工業
+    "2317.TW":"鴻海","2308.TW":"台達電","2049.TW":"上銀","1590.TW":"亞德客-KY",
+    "2231.TW":"為升",
+    # 生技
+    "6446.TW":"藥華藥","1795.TW":"美時",
+    # 傳產飆股候選
+    "1802.TW":"台玻","6290.TWO":"良維","9910.TW":"豐泰","9921.TW":"巨大",
+    "1476.TW":"儒鴻","9945.TW":"潤泰新","2105.TW":"正新","6505.TW":"台塑化",
+    # 上櫃飆股
+    "3081.TWO":"聯亞","6547.TWO":"高端疫苗","2498.TW":"宏達電",
+}
+
+def scan_reversal_stocks():
+    """掃描符合反轉獵手進場條件的股票"""
+    cache_key = "stock_scanner"
+    cached = cache_get(cache_key)
+    if cached is not None:
+        return cached
+
+    hits = []    # 三把鑰匙全亮
+    watchlist = []  # 差一把
+    holding_check = []  # 持倉檢查用
+
+    for ticker, name in REVERSAL_POOL.items():
+        try:
+            d = yf.Ticker(ticker).history(period="3mo")
+            if d is None or len(d) < 25:
+                continue
+            d.index = d.index.tz_localize(None) if d.index.tz is not None else d.index
+
+            close = _extract_close(pd.DataFrame(d))
+            if close is None or len(close) < 25:
+                continue
+            d_clean = pd.DataFrame({"Close": close, "Volume": d["Volume"] if "Volume" in d else 0})
+
+            d_clean["MA20"] = d_clean["Close"].rolling(20).mean()
+            d_clean["vol_avg20"] = d_clean["Volume"].rolling(20).mean()
+            d_clean["vol_ratio"] = d_clean["Volume"] / d_clean["vol_avg20"].replace(0, 1)
+            delta = d_clean["Close"].diff()
+            gain = delta.clip(lower=0).rolling(14).mean()
+            loss = (-delta.clip(upper=0)).rolling(14).mean()
+            d_clean["RSI"] = 100 - 100 / (1 + gain / loss.replace(0, 1e-10))
+            d_clean["above3"] = (d_clean["Close"] > d_clean["MA20"]).rolling(3).sum()
+            d_clean["RSI_min20"] = d_clean["RSI"].rolling(20).min()
+
+            r = d_clean.iloc[-1]
+            price = float(r["Close"])
+            rsi = float(r["RSI"]) if pd.notna(r["RSI"]) else 0
+            vol_r = float(r["vol_ratio"]) if pd.notna(r["vol_ratio"]) else 0
+            ma20 = float(r["MA20"]) if pd.notna(r["MA20"]) else 0
+            above3 = float(r["above3"]) if pd.notna(r["above3"]) else 0
+            rsi_min = float(r["RSI_min20"]) if pd.notna(r["RSI_min20"]) else 50
+
+            if price < 15 or ma20 == 0:
+                continue
+
+            k1 = rsi > 50
+            k2 = vol_r >= 1.5
+            k3 = price > ma20 and above3 >= 3
+            keys = sum([k1, k2, k3])
+
+            stock_info = {
+                "ticker": ticker, "name": name,
+                "price": round(price, 1),
+                "rsi": round(rsi, 0),
+                "vol_ratio": round(vol_r, 1),
+                "ma20": round(ma20, 1),
+                "above_ma20_3d": above3 >= 3,
+                "was_oversold": rsi_min < 35,
+                "keys": keys,
+            }
+
+            if keys == 3:
+                hits.append(stock_info)
+            elif keys == 2 and k1:
+                missing = []
+                if not k2:
+                    missing.append(f"量比{vol_r:.1f}x(<1.5)")
+                if not k3:
+                    if price <= ma20:
+                        missing.append(f"價{price:.0f}<MA20({ma20:.0f})")
+                    else:
+                        missing.append("未連3天站MA20")
+                stock_info["missing"] = ", ".join(missing)
+                watchlist.append(stock_info)
+
+            time.sleep(0.15)
+        except:
+            continue
+
+    hits.sort(key=lambda x: x["vol_ratio"], reverse=True)
+    watchlist.sort(key=lambda x: x["rsi"], reverse=True)
+
+    result = {
+        "scan_time": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "pool_size": len(REVERSAL_POOL),
+        "hits": hits,
+        "watchlist": watchlist[:15],
+        "strategy": {
+            "name": "反轉獵手",
+            "entry": "RSI>50 + 量≥1.5x + 連3天站MA20",
+            "stop_loss": "跌破MA20",
+            "take_profit": "從高點回跌10%",
+            "max_positions": 2,
+            "capital": "50萬",
+        }
+    }
+    cache_set(cache_key, result)
+    return result
+
+@app.route("/api/stock_scanner")
+def api_stock_scanner():
+    """反轉獵手 — 個股掃描"""
+    try:
+        result = scan_reversal_stocks()
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e), "trace": traceback.format_exc()}), 500
+
+# ===== 模擬單 — Paper Trading =====
+
+PAPER_FILE = os.path.join(DATA_DIR, "paper_trading.json")
+
+def load_paper():
+    default = {"capital": 500000, "cash": 500000, "positions": [], "trades": [], "started": None}
+    return load_json(PAPER_FILE, default)
+
+def save_paper(data):
+    save_json(PAPER_FILE, data)
+
+@app.route("/api/paper/portfolio")
+def paper_portfolio():
+    """取得模擬單投資組合 + 即時價格 + 出場信號"""
+    paper = load_paper()
+    if not paper.get("started"):
+        return jsonify({"status": "inactive", "capital": paper["capital"]})
+
+    total_stock = 0
+    for pos in paper["positions"]:
+        try:
+            d = yf.Ticker(pos["ticker"]).history(period="3mo")
+            if d is None or len(d) < 25:
+                pos["current_price"] = pos["buy_price"]
+                pos["signal"] = "無數據"
+                continue
+            d.index = d.index.tz_localize(None) if d.index.tz is not None else d.index
+            close = _extract_close(pd.DataFrame(d))
+            if close is None or len(close) < 25:
+                continue
+
+            cur = float(close.iloc[-1])
+            pos["current_price"] = round(cur, 1)
+            pos["pnl_pct"] = round((cur / pos["buy_price"] - 1) * 100, 1)
+            pos["pnl_amount"] = round(pos["shares"] * (cur - pos["buy_price"]), 0)
+            pos["market_value"] = round(pos["shares"] * cur, 0)
+            total_stock += pos["market_value"]
+
+            # 更新最高價
+            if cur > pos.get("high_price", 0):
+                pos["high_price"] = round(cur, 1)
+
+            # 計算出場信號
+            d_clean = pd.DataFrame({"Close": close})
+            d_clean["MA20"] = d_clean["Close"].rolling(20).mean()
+            ma20 = float(d_clean["MA20"].iloc[-1]) if pd.notna(d_clean["MA20"].iloc[-1]) else 0
+            pos["ma20"] = round(ma20, 1)
+
+            from_high = (cur / pos.get("high_price", cur) - 1) * 100
+            pos["from_high"] = round(from_high, 1)
+            ret = cur / pos["buy_price"] - 1
+
+            days = (datetime.now() - datetime.strptime(pos["buy_date"], "%Y-%m-%d")).days
+            pos["hold_days"] = days
+
+            # 出場信號判斷
+            if days >= 3 and ma20 > 0 and cur < ma20:
+                pos["signal"] = "🔴 破MA20停損"
+                pos["signal_type"] = "stop_loss"
+            elif from_high <= -10 and ret > 0.03:
+                pos["signal"] = "🟡 移動停利"
+                pos["signal_type"] = "trailing_stop"
+            else:
+                pos["signal"] = "✅ 持有"
+                pos["signal_type"] = "hold"
+
+            # 記錄每日漲跌幅歷史
+            if "daily_log" not in pos:
+                pos["daily_log"] = []
+            buy_dt = pd.Timestamp(pos["buy_date"])
+            history = close[close.index >= buy_dt]
+            daily_log = []
+            prev_p = pos["buy_price"]
+            for dt, p in history.items():
+                pv = float(p)
+                chg = round((pv / prev_p - 1) * 100, 2)
+                cum = round((pv / pos["buy_price"] - 1) * 100, 2)
+                daily_log.append({
+                    "date": dt.strftime("%Y-%m-%d"),
+                    "price": round(pv, 1),
+                    "change": chg,
+                    "cumulative": cum,
+                })
+                prev_p = pv
+            pos["daily_log"] = daily_log
+
+            time.sleep(0.2)
+        except Exception as e:
+            pos["signal"] = f"⚠️ {str(e)[:20]}"
+            pos["signal_type"] = "error"
+
+    save_paper(paper)
+
+    total_value = paper["cash"] + total_stock
+    return jsonify({
+        "status": "active",
+        "started": paper["started"],
+        "capital": paper["capital"],
+        "cash": round(paper["cash"], 0),
+        "positions": paper["positions"],
+        "trades": paper.get("trades", [])[-20:],  # 最近20筆
+        "total_stock": round(total_stock, 0),
+        "total_value": round(total_value, 0),
+        "total_pnl": round(total_value - paper["capital"], 0),
+        "total_pnl_pct": round((total_value / paper["capital"] - 1) * 100, 1) if paper["capital"] > 0 else 0,
+        "trade_count": len(paper.get("trades", [])),
+        "win_count": sum(1 for t in paper.get("trades", []) if t.get("pnl_pct", 0) > 0),
+    })
+
+@app.route("/api/paper/start", methods=["POST"])
+def paper_start():
+    """開始模擬單"""
+    data = request.get_json() or {}
+    capital = float(data.get("capital", 500000))
+    paper = {"capital": capital, "cash": capital, "positions": [], "trades": [],
+             "started": datetime.now().strftime("%Y-%m-%d %H:%M")}
+    save_paper(paper)
+    return jsonify({"ok": True})
+
+@app.route("/api/paper/buy", methods=["POST"])
+def paper_buy():
+    """模擬買入"""
+    paper = load_paper()
+    if not paper.get("started"):
+        return jsonify({"error": "請先開始模擬單"}), 400
+
+    data = request.get_json()
+    ticker = data.get("ticker")
+    name = data.get("name", ticker)
+
+    # 檢查是否已持有
+    for p in paper["positions"]:
+        if p["ticker"] == ticker:
+            return jsonify({"error": f"已持有 {name}"}), 400
+
+    # 檢查持倉上限
+    if len(paper["positions"]) >= 2:
+        return jsonify({"error": "已滿倉（最多2支）"}), 400
+
+    # 取得當前價格
+    try:
+        d = yf.Ticker(ticker).history(period="5d")
+        if d is None or len(d) == 0:
+            return jsonify({"error": f"無法取得 {ticker} 價格"}), 400
+        d.index = d.index.tz_localize(None) if d.index.tz is not None else d.index
+        price = float(_extract_close(pd.DataFrame(d)).iloc[-1])
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+    # 分配資金（平分剩餘）
+    slots = 2 - len(paper["positions"])
+    buy_amount = min(paper["cash"] / slots, paper["cash"])
+    if buy_amount < 10000:
+        return jsonify({"error": f"現金不足（剩 {paper['cash']:,.0f}）"}), 400
+
+    shares = int(buy_amount / price)  # 整股
+    cost = round(shares * price, 0)
+
+    paper["cash"] -= cost
+    paper["positions"].append({
+        "ticker": ticker, "name": name,
+        "buy_price": round(price, 1),
+        "buy_date": datetime.now().strftime("%Y-%m-%d"),
+        "shares": shares,
+        "cost": cost,
+        "high_price": round(price, 1),
+    })
+    save_paper(paper)
+    return jsonify({"ok": True, "msg": f"買入 {name} {shares}股 @ {price:.1f}，花費 {cost:,.0f}"})
+
+@app.route("/api/paper/sell", methods=["POST"])
+def paper_sell():
+    """模擬賣出"""
+    paper = load_paper()
+    data = request.get_json()
+    ticker = data.get("ticker")
+    reason = data.get("reason", "手動賣出")
+
+    pos = None
+    for i, p in enumerate(paper["positions"]):
+        if p["ticker"] == ticker:
+            pos = p
+            idx = i
+            break
+    if pos is None:
+        return jsonify({"error": f"未持有 {ticker}"}), 400
+
+    # 取得當前價格
+    try:
+        d = yf.Ticker(ticker).history(period="5d")
+        d.index = d.index.tz_localize(None) if d.index.tz is not None else d.index
+        price = float(_extract_close(pd.DataFrame(d)).iloc[-1])
+    except:
+        price = pos.get("current_price", pos["buy_price"])
+
+    revenue = round(pos["shares"] * price, 0)
+    pnl = revenue - pos["cost"]
+    pnl_pct = round((price / pos["buy_price"] - 1) * 100, 1)
+    days = (datetime.now() - datetime.strptime(pos["buy_date"], "%Y-%m-%d")).days
+
+    paper["cash"] += revenue
+    paper["trades"].append({
+        "ticker": ticker, "name": pos["name"],
+        "buy_price": pos["buy_price"], "sell_price": round(price, 1),
+        "buy_date": pos["buy_date"], "sell_date": datetime.now().strftime("%Y-%m-%d"),
+        "shares": pos["shares"], "cost": pos["cost"], "revenue": revenue,
+        "pnl": round(pnl, 0), "pnl_pct": pnl_pct,
+        "days": days, "reason": reason,
+    })
+    paper["positions"].pop(idx)
+    save_paper(paper)
+    return jsonify({"ok": True, "msg": f"賣出 {pos['name']} @ {price:.1f}，{pnl_pct:+.1f}%"})
+
+@app.route("/api/paper/reset", methods=["POST"])
+def paper_reset():
+    """重置模擬單"""
+    if os.path.exists(PAPER_FILE):
+        os.remove(PAPER_FILE)
+    return jsonify({"ok": True})
+
 # ===== Strategy Registry =====
 
 STRATEGIES = [
@@ -1014,37 +1376,24 @@ STRATEGIES = [
     },
     {
         "id": "catastrophe_exit",
-        "name": "災難出場 v1",
-        "description": "5取3出場 + 4取3進場 + 5日冷卻 + 20萬加碼",
+        "name": "災難出場 v3c",
+        "description": "5取3出場(連續≥2天) + 4取3進場 + 20萬加碼",
         "status": "active",
-        "version": "1.0",
+        "version": "3c",
         "indicators": 5,
         "backtest_annual": "+326%（11年）",
         "backtest_sharpe": "—",
     },
     {
-        "id": "trump_code",
-        "name": "川普密碼",
-        "description": "Truth Social 貼文分析 × S&P 500 預測模型",
-        "status": "planned",
-        "version": "-",
-        "note": "偏多信號過強，需優化為事件觸發模式",
-    },
-    {
-        "id": "pentagon_pizza",
-        "name": "五角大廈 Pizza 指數",
-        "description": "美國國防部周邊 Pizza 外送量黑天鵝預警",
-        "status": "planned",
-        "version": "-",
-        "note": "無歷史數據，僅供即時預警參考",
-    },
-    {
-        "id": "foreign_investor",
-        "name": "外資買賣超策略",
-        "description": "台股外資連續買賣超天數 + 融資餘額變化",
-        "status": "planned",
-        "version": "-",
-        "note": "待開發：接入台灣證交所 API",
+        "id": "reversal_hunter",
+        "name": "反轉獵手",
+        "description": "個股飆股捕捉：RSI>50 + 量≥1.5x + 連3天站MA20 | 破MA20停損 + 10%移停",
+        "status": "active",
+        "version": "1.0",
+        "indicators": 3,
+        "backtest_annual": "+838%（5年累計）",
+        "backtest_sharpe": "賠賺比3.4",
+        "note": "73支精選股池 | 2支集中持倉 | 50萬獨立操作",
     },
 ]
 

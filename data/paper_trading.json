@@ -1,0 +1,34 @@
+{
+  "capital": 500000.0,
+  "cash": 250028.0,
+  "positions": [
+    {
+      "ticker": "8046.TW",
+      "name": "南電",
+      "buy_price": 563.0,
+      "buy_date": "2026-03-16",
+      "shares": 444,
+      "cost": 249972.0,
+      "high_price": 566.0,
+      "current_price": 566.0,
+      "pnl_pct": 0.5,
+      "pnl_amount": 1332.0,
+      "market_value": 251304.0,
+      "ma20": 469.0,
+      "from_high": 0.0,
+      "hold_days": 0,
+      "signal": "✅ 持有",
+      "signal_type": "hold",
+      "daily_log": [
+        {
+          "date": "2026-03-16",
+          "price": 566.0,
+          "change": 0.53,
+          "cumulative": 0.53
+        }
+      ]
+    }
+  ],
+  "trades": [],
+  "started": "2026-03-16 12:01"
+}
