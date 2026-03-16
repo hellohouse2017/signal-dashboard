@@ -5,7 +5,7 @@
 from flask import Flask, render_template, jsonify, request
 import yfinance as yf
 import pandas as pd
-import json, os, time
+import json, os, time, requests as _requests
 from datetime import datetime, timedelta
 import traceback
 
@@ -1152,11 +1152,52 @@ def scan_reversal_stocks():
     cache_set(cache_key, result)
     return result
 
+# ===== Telegram 通知 =====
+TG_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+TG_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
+_tg_notified = {}  # {date_ticker: True} 防止同一天重複通知
+
+def send_tg(text):
+    if not TG_BOT_TOKEN or not TG_CHAT_ID:
+        print("⚠️ TG credentials not set, skip notification")
+        return
+    try:
+        _requests.post(
+            f"https://api.telegram.org/bot{TG_BOT_TOKEN}/sendMessage",
+            json={"chat_id": TG_CHAT_ID, "text": text, "parse_mode": "HTML"},
+            timeout=5
+        )
+    except Exception as e:
+        print(f"TG send error: {e}")
+
+def notify_scanner_hits(hits):
+    """掃到三把鑰匙全亮時，TG 通知"""
+    today = datetime.now().strftime("%Y-%m-%d")
+    new_hits = []
+    for s in hits:
+        key = f"{today}_{s['ticker']}"
+        if key not in _tg_notified:
+            _tg_notified[key] = True
+            new_hits.append(s)
+    if not new_hits:
+        return
+    msg = f"🔥 <b>反轉獵手掃描命中 ({len(new_hits)}支)</b>\n"
+    msg += f"📅 {today}\n\n"
+    for s in new_hits:
+        msg += f"🟢 <b>{s['name']}</b> ({s['ticker']})\n"
+        msg += f"   💰 ${s['price']} | RSI {s['rsi']} | 量比 {s['vol_ratio']}x\n"
+        msg += f"   MA20 ${s.get('ma20', '-')} | 連站{s.get('above_ma20_days', '?')}天\n\n"
+    msg += "📊 前往儀表板 → 策略 → 模擬進場"
+    send_tg(msg)
+
 @app.route("/api/stock_scanner")
 def api_stock_scanner():
     """反轉獵手 — 個股掃描"""
     try:
         result = scan_reversal_stocks()
+        # 盤中有命中 → TG 通知
+        if result.get("hits"):
+            notify_scanner_hits(result["hits"])
         return jsonify(result)
     except Exception as e:
         return jsonify({"error": str(e), "trace": traceback.format_exc()}), 500
