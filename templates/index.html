@@ -489,8 +489,8 @@ async function loadSignal() {
         const d = await res.json();
         if (d.error) { document.getElementById('signal-hero').innerHTML = `<p style="color:var(--red)">❌ ${d.error}</p>`; return; }
         const icons = {LONG:'📈',HOLD:'⏸',SHORT:'🛡️'};
-        const actions = {LONG:'明天開盤 → 100% 全倉買入 0050',HOLD:'明天開盤 → 持有 70%，保留 30% 現金',SHORT:'明天開盤 → 全部賣出 0050，持有現金'};
-        const changed = d.signal_changed ? '<div style="margin-top:8px;font-size:13px;color:var(--yellow)">⚠️ 信號已變化，需要調倉！</div>' : '';
+        const actions = {LONG:'持續 100% 全倉持有，看下方災難出場面板',HOLD:'持續 100% 全倉持有，看下方災難出場面板',SHORT:'持續 100% 全倉持有，看下方災難出場面板'};
+        const changed = d.signal_changed ? '<div style="margin-top:8px;font-size:13px;color:var(--yellow)">⚠️ 信號已變化，注意災難出場面板</div>' : '';
 
         // 時間提示 banner
         let timingHtml = '';
@@ -531,38 +531,31 @@ async function loadSignal() {
             ${d.data_valid ? '<div style="margin-top:8px;font-size:12px;color:var(--green)">✅ 數據驗證通過' + (d.cross_validation?.length ? ' | 交叉比對：' + d.cross_validation.map(cv => `${cv.name}(${cv.source}:${cv.diff_pct < 1 ? '✅' : cv.diff_pct < 5 ? '⚠️' : '❌'}${cv.diff_pct}%)`).join(' ') : ' | TWSE 備援自動啟用') + '</div>' : ''}
             ${freshnessHtml}`;
 
-        // ===== 今日操作建議 =====
+        // ===== 今日操作建議（基於災難出場面板）=====
         let actionCard = '';
-        const cur = d.signal;
-        const prev = d.prev_signal || cur;
-        const transition = prev + '→' + cur;
-        const actionMap = {
-            'LONG→SHORT':   { icon: '🚨', color: 'var(--red)',    bg: 'rgba(239,68,68,0.15)',  border: 'rgba(239,68,68,0.4)',
-                             title: '重大恐慌！立即加碼', action: '恐慌基金拿 50 萬，開盤市價買 00631L',
-                             reason: '市場從做多轉為避險，歷史回測顯示這是最佳買入時機' },
-            'HOLD→SHORT':  { icon: '⚠️', color: 'var(--red)',    bg: 'rgba(239,68,68,0.1)',   border: 'rgba(239,68,68,0.3)',
-                             title: '小幅加碼', action: '恐慌基金拿 1 萬，買 00631L',
-                             reason: '市場從觀望轉為避險，小額佈局' },
-            'SHORT→SHORT':     { icon: '🔴', color: 'var(--text2)',  bg: 'rgba(239,68,68,0.05)',  border: 'var(--border)',
-                             title: '持續避險，不動作', action: '什麼都不做，保持持有',
-                             reason: '已在前次避險加碼，連續避險不重複買入' },
-            'SHORT→LONG':   { icon: '🎉', color: 'var(--green)',  bg: 'rgba(16,185,129,0.1)',  border: 'rgba(16,185,129,0.3)',
-                             title: '恐慌結束！繼續持有', action: '不賣出，享受反彈',
-                             reason: '市場恢復做多，之前加碼的部位開始獲利' },
-            'SHORT→HOLD':  { icon: '🟡', color: 'var(--yellow)', bg: 'rgba(245,158,11,0.1)',  border: 'rgba(245,158,11,0.3)',
-                             title: '市場回穩中', action: '不動作，繼續觀察',
-                             reason: '從避險中回暖，但尚未完全安全' },
-        };
-        // 默認：不動作
-        const defaultAction = { icon: '😎', color: 'var(--green)', bg: 'rgba(16,185,129,0.05)', border: 'var(--border)',
-                                title: '一切正常，不需操作', action: '關掉 Dashboard，去忙別的',
-                                reason: `目前信號：${cur}，無需任何動作` };
-        const act = actionMap[transition] || defaultAction;
+        const cat = d.catastrophe || {};
+        let act;
+        if (cat.status === 'exit_triggered') {
+            act = { icon: '🚨', color: 'var(--red)', bg: 'rgba(239,68,68,0.15)', border: 'rgba(239,68,68,0.4)',
+                    title: '災難出場觸發！賣出避險', action: '全部賣出 0050/00631L，持有現金等待進場信號',
+                    reason: `出場條件 ${cat.exit_score}/5 達標（≥3），執行災難出場` };
+        } else if (cat.status === 'exit_warning') {
+            act = { icon: '⚠️', color: 'var(--yellow)', bg: 'rgba(245,158,11,0.1)', border: 'rgba(245,158,11,0.3)',
+                    title: '出場預警，密切注意', action: '繼續持有，但明天再檢查一次',
+                    reason: `出場條件 ${cat.exit_score}/5，接近觸發門檻（3）` };
+        } else if (cat.status === 'entry_safe') {
+            act = { icon: '✅', color: 'var(--green)', bg: 'rgba(16,185,129,0.1)', border: 'rgba(16,185,129,0.3)',
+                    title: '安全進場！加碼買入', action: '恐慌基金拿 20 萬，開盤買入 0050/00631L',
+                    reason: `進場條件 ${cat.entry_score}/4 達標（≥3），安全回場 + 加碼` };
+        } else {
+            act = { icon: '😎', color: 'var(--green)', bg: 'rgba(16,185,129,0.05)', border: 'var(--border)',
+                    title: '一切正常，不需操作', action: '關掉 Dashboard，去忙別的',
+                    reason: `出場 ${cat.exit_score||0}/5 進場 ${cat.entry_score||0}/4，無需任何動作` };
+        }
         actionCard = `<div style="margin:20px 0;padding:20px;background:${act.bg};border:1px solid ${act.border};border-radius:16px;text-align:left">
             <div style="font-size:20px;font-weight:700;color:${act.color};margin-bottom:8px">${act.icon} 今日操作：${act.title}</div>
             <div style="font-size:16px;font-weight:600;margin-bottom:6px">👉 ${act.action}</div>
             <div style="font-size:13px;color:var(--text2)">📊 原因：${act.reason}</div>
-            <div style="font-size:12px;color:var(--text2);margin-top:8px;opacity:0.7">信號轉換：${prev} → ${cur}</div>
         </div>`;
         document.getElementById('signal-hero').innerHTML += actionCard;
         let html = '';

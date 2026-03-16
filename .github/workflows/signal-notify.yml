@@ -30,65 +30,55 @@ jobs:
         run: |
           DATA='${{ steps.signal.outputs.data }}'
 
-          CUR=$(echo "$DATA" | python3 -c "import sys,json; print(json.load(sys.stdin)['signal'])")
-          PREV=$(echo "$DATA" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('prev_signal',d['signal']))")
           SCORE=$(echo "$DATA" | python3 -c "import sys,json; print(json.load(sys.stdin)['score'])")
           PRICE=$(echo "$DATA" | python3 -c "import sys,json; print(json.load(sys.stdin)['price'])")
           DATE=$(echo "$DATA" | python3 -c "import sys,json; print(json.load(sys.stdin)['date'])")
 
-          TRANSITION="${PREV}→${CUR}"
-          echo "Signal transition: $TRANSITION"
+          # 災難出場條件（核心策略）
+          CAT_STATUS=$(echo "$DATA" | python3 -c "import sys,json; print(json.load(sys.stdin).get('catastrophe',{}).get('status','normal'))")
+          EXIT_SCORE=$(echo "$DATA" | python3 -c "import sys,json; print(json.load(sys.stdin).get('catastrophe',{}).get('exit_score',0))")
+          ENTRY_SCORE=$(echo "$DATA" | python3 -c "import sys,json; print(json.load(sys.stdin).get('catastrophe',{}).get('entry_score',0))")
 
-          # 決定訊息
-          case "$TRANSITION" in
-            "LONG→SHORT")
-              MSG="🚨🚨🚨 重大恐慌！立即加碼！
+          echo "Catastrophe status: $CAT_STATUS (exit: $EXIT_SCORE/5, entry: $ENTRY_SCORE/4)"
 
-📊 信號：${TRANSITION}
-📈 0050：${PRICE} 元
-🎯 評分：${SCORE}
-📅 日期：${DATE}
+          case "$CAT_STATUS" in
+            "exit_triggered")
+              MSG="🚨🚨🚨 災難出場觸發！立即賣出！
+          🛡️ 出場條件：${EXIT_SCORE}/5（≥3 觸發）
+          📈 0050：${PRICE} 元
+          🎯 評分：${SCORE}
+          📅 日期：${DATE}
 
-👉 恐慌基金拿 50 萬，開盤市價買 00631L
-💡 市場從做多→避險，歷史回測最佳買入時機"
+          👉 全部賣出 0050/00631L，持有現金
+          👉 等待安全進場信號（4取3）再買回
+          ⚠️ 冷卻期 5 天"
               ;;
-            "HOLD→SHORT")
-              MSG="⚠️ 小幅加碼信號
+            "exit_warning")
+              MSG="⚠️ 出場預警！密切注意
+          🛡️ 出場條件：${EXIT_SCORE}/5（接近觸發）
+          📈 0050：${PRICE} 元
+          🎯 評分：${SCORE}
+          📅 日期：${DATE}
 
-📊 信號：${TRANSITION}
-📈 0050：${PRICE} 元
-🎯 評分：${SCORE}
-📅 日期：${DATE}
-
-👉 恐慌基金拿 1 萬，買 00631L
-💡 市場從觀望→避險，小額佈局"
+          👉 繼續持有，但明天務必再檢查
+          💡 再多 1 個條件就觸發出場"
               ;;
-            "SHORT→LONG")
-              MSG="🎉 恐慌結束！
+            "entry_safe")
+              MSG="✅ 安全進場！加碼買入
+          🟢 進場條件：${ENTRY_SCORE}/4（≥3 觸發）
+          📈 0050：${PRICE} 元
+          🎯 評分：${SCORE}
+          📅 日期：${DATE}
 
-📊 信號：${TRANSITION}
-📈 0050：${PRICE} 元
-🎯 評分：${SCORE}
-
-👉 不賣出，繼續持有享受反彈"
-              ;;
-            "SHORT→HOLD")
-              MSG="🟡 市場回穩中
-
-📊 信號：${TRANSITION}
-📈 0050：${PRICE} 元
-🎯 評分：${SCORE}
-
-👉 不動作，繼續觀察"
+          👉 恐慌基金拿 20 萬，開盤買入 0050/00631L
+          💡 市場已安全，回場 + 加碼"
               ;;
             *)
-              EMOJI="⚪"
-              if [ "$CUR" = "LONG" ]; then EMOJI="🟢"; fi
-              if [ "$CUR" = "HOLD" ]; then EMOJI="🟡"; fi
-              if [ "$CUR" = "SHORT" ]; then EMOJI="🔴"; fi
-              MSG="${EMOJI} 每日信號：${CUR}
-📈 0050：${PRICE} 元｜評分：${SCORE}
-😎 今日不需操作"
+              MSG="😎 每日信號：正常持有
+          📈 0050：${PRICE} 元｜評分：${SCORE}
+          🛡️ 出場 ${EXIT_SCORE}/5 進場 ${ENTRY_SCORE}/4
+          📅 ${DATE}
+          ✅ 不需操作"
               ;;
           esac
 
