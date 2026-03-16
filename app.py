@@ -627,8 +627,8 @@ def calc_catastrophe(row):
          "value": f"{mom:.1f}%", "met": mom < -8},
         {"name": "SMH < MA50", "threshold": f"< {smh_ma50:.2f}",
          "value": f"{smh:.2f}", "met": smh < smh_ma50 and smh > 0},
-        {"name": "回撤 > 8%", "threshold": "< -8%",
-         "value": f"{dd:.1f}%", "met": dd < -8},
+        {"name": "回撤 > 12%", "threshold": "< -12%",
+         "value": f"{dd:.1f}%", "met": dd < -12},
     ]
 
     # 4 個進場條件
