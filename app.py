@@ -1609,53 +1609,6 @@ def reset_ops_log():
     save_json(OPS_LOG_FILE, [])
     return jsonify({"ok": True})
 
-# ===== Vercel Cron — 自動掃描 + 退場檢查 =====
-@app.route("/api/cron/scan")
-def cron_scan():
-    """Vercel Cron 觸發：盤中自動掃描 + 退場信號檢查"""
-    # 驗證 cron secret
-    auth = request.headers.get("Authorization", "")
-    cron_secret = os.environ.get("CRON_SECRET", "")
-    if cron_secret and auth != f"Bearer {cron_secret}":
-        return jsonify({"error": "unauthorized"}), 401
-
-    # 只在台股開盤時間 (9:00-13:30 UTC+8 = 1:00-5:30 UTC) 執行
-    import pytz
-    tw = pytz.timezone("Asia/Taipei")
-    now_tw = datetime.now(tw)
-    hhmm = now_tw.hour * 100 + now_tw.minute
-    weekday = now_tw.weekday()  # 0=Mon
-
-    if weekday >= 5 or hhmm < 900 or hhmm > 1330:
-        return jsonify({"status": "skip", "reason": "outside market hours", "tw_time": now_tw.strftime("%H:%M"), "weekday": weekday})
-
-    results = {"tw_time": now_tw.strftime("%H:%M")}
-
-    # 1) 掃描個股
-    try:
-        scan = scan_reversal_stocks()
-        hits = scan.get("hits", [])
-        results["scanner_hits"] = len(hits)
-        if hits:
-            notify_scanner_hits(hits)
-    except Exception as e:
-        results["scanner_error"] = str(e)
-
-    # 2) 檢查持倉退場信號（觸發 paper_portfolio 邏輯）
-    try:
-        paper = load_paper()
-        if paper.get("started") and paper.get("positions"):
-            # 直接呼叫 portfolio endpoint 邏輯來更新信號
-            with app.test_request_context():
-                paper_portfolio()
-            results["exit_check"] = "done"
-        else:
-            results["exit_check"] = "no positions"
-    except Exception as e:
-        results["exit_error"] = str(e)
-
-    return jsonify({"status": "ok", **results})
-
 
 if __name__ == "__main__":
     print("🚀 五大指標策略儀表板 v3")
