@@ -488,7 +488,7 @@ def add_indicators(df):
     df["above_MA20"] = df["0050"] > df["MA20"]
     df["above_MA60"] = df["0050"] > df["MA60"]
     df["momentum_20"] = df["0050"].pct_change(20) * 100
-    df["drawdown"] = (df["0050"] / df["0050"].cummax() - 1) * 100
+    df["drawdown"] = (df["0050"] / df["0050"].rolling(60).max() - 1) * 100
     if "SMH" in df.columns:
         df["SMH_MA50"] = df["SMH"].rolling(50).mean()
     return df
@@ -597,48 +597,52 @@ def calc_signal(row):
         "details": details
     }
 
+# 連續觸發天數追蹤（全域）
+_consec_exit_days = 0
+
 def calc_catastrophe(row):
-    """計算災難出場(5取3) / 安全進場(4取3) 條件"""
+    """計算災難出場(5取3+連續≥2天) / 安全進場(4取3) 條件 — v3c版"""
     import numpy as np
+    global _consec_exit_days
 
     price = float(row.get("0050", 0))
     vix = float(row.get("VIX", 20))
-    mom = float(row.get("momentum_20", 0))
     ma120 = float(row.get("MA120", 0))
     ma60 = float(row.get("MA60", 0))
     dd = float(row.get("drawdown", 0))
+    dxy = float(row.get("DXY", 0))
     smh = float(row.get("SMH", 0)) if "SMH" in row.index else 0
     smh_ma50 = float(row.get("SMH_MA50", 0)) if "SMH_MA50" in row.index else 0
 
     # 處理 NaN
-    for v in [ma120, ma60, smh_ma50, dd, mom]:
+    for v in [ma120, ma60, smh_ma50, dd]:
         if np.isnan(v):
             return {"exit_score": 0, "entry_score": 0, "exit_triggered": False,
                     "entry_triggered": False, "exit_conditions": [], "entry_conditions": [],
-                    "status": "data_insufficient"}
+                    "status": "data_insufficient", "consec_days": 0}
 
-    # 5 個出場條件
+    # 5 個出場條件（v3c）
     exit_conditions = [
         {"name": "0050 < MA120×0.97", "threshold": f"< {ma120*0.97:.2f}",
          "value": f"{price:.2f}", "met": price < ma120 * 0.97},
         {"name": "VIX > 28", "threshold": "> 28",
          "value": f"{vix:.1f}", "met": vix > 28},
-        {"name": "動能 < -8%", "threshold": "< -8%",
-         "value": f"{mom:.1f}%", "met": mom < -8},
-        {"name": "SMH < MA50", "threshold": f"< {smh_ma50:.2f}",
-         "value": f"{smh:.2f}", "met": smh < smh_ma50 and smh > 0},
         {"name": "回撤 > 12%", "threshold": "< -12%",
          "value": f"{dd:.1f}%", "met": dd < -12},
+        {"name": "SMH < MA50", "threshold": f"< {smh_ma50:.2f}",
+         "value": f"{smh:.2f}", "met": smh < smh_ma50 and smh > 0},
+        {"name": "DXY > 107", "threshold": "> 107",
+         "value": f"{dxy:.1f}", "met": dxy > 107},
     ]
 
-    # 4 個進場條件
+    # 4 個進場條件（v3c）
     entry_conditions = [
         {"name": "0050 > MA60", "threshold": f"> {ma60:.2f}",
          "value": f"{price:.2f}", "met": price > ma60},
-        {"name": "VIX < 25", "threshold": "< 25",
-         "value": f"{vix:.1f}", "met": vix < 25},
-        {"name": "動能 > 0%", "threshold": "> 0%",
-         "value": f"{mom:.1f}%", "met": mom > 0},
+        {"name": "VIX < 22", "threshold": "< 22",
+         "value": f"{vix:.1f}", "met": vix < 22},
+        {"name": "回撤 > -3%", "threshold": "> -3%",
+         "value": f"{dd:.1f}%", "met": dd > -3},
         {"name": "SMH > MA50", "threshold": f"> {smh_ma50:.2f}",
          "value": f"{smh:.2f}", "met": smh > smh_ma50 and smh > 0},
     ]
@@ -646,11 +650,22 @@ def calc_catastrophe(row):
     exit_score = sum(1 for c in exit_conditions if c["met"])
     entry_score = sum(1 for c in entry_conditions if c["met"])
 
-    # 綜合狀態
+    # 連續觸發追蹤
     if exit_score >= 3:
-        status = "exit_triggered"
+        _consec_exit_days += 1
+    else:
+        _consec_exit_days = 0
+
+    # v3c: 連續≥2天才真正觸發出場
+    exit_confirmed = exit_score >= 3 and _consec_exit_days >= 2
+
+    # 綜合狀態
+    if exit_confirmed:
+        status = "exit_confirmed"  # 連續2天確認→隔天出場
+    elif exit_score >= 3:
+        status = "exit_warning"    # 第1天亮3燈→先觀察
     elif exit_score >= 2:
-        status = "exit_warning"
+        status = "exit_caution"    # 2燈→注意
     elif entry_score >= 3:
         status = "entry_safe"
     else:
@@ -659,11 +674,12 @@ def calc_catastrophe(row):
     return {
         "exit_score": exit_score,
         "entry_score": entry_score,
-        "exit_triggered": exit_score >= 3,
+        "exit_triggered": exit_confirmed,  # 只有連續2天才是 True
         "entry_triggered": entry_score >= 3,
         "exit_conditions": exit_conditions,
         "entry_conditions": entry_conditions,
         "status": status,
+        "consec_days": _consec_exit_days,
     }
 
 def run_backtest(start, end):
