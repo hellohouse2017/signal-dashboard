@@ -527,7 +527,7 @@ async function loadSignal() {
             <div class="signal-label">${d.label}</div>
             <div class="signal-score">綜合分數：${d.score>0?'+':''}${d.score}</div>
             <div class="signal-action ${d.color}">${actions[d.signal]}</div>${changed}
-            <div class="price-info">0050 收盤價：<strong>${d.price} 元</strong></div>
+            <div class="price-info">0050：<strong>${d.price} 元</strong>${d.price_631l ? ' ｜ 00631L 正2：<strong>' + d.price_631l + ' 元</strong>' : ''}</div>
             ${d.data_valid ? '<div style="margin-top:8px;font-size:12px;color:var(--green)">✅ 數據驗證通過' + (d.cross_validation?.length ? ' | 交叉比對：' + d.cross_validation.map(cv => `${cv.name}(${cv.source}:${cv.diff_pct < 1 ? '✅' : cv.diff_pct < 5 ? '⚠️' : '❌'}${cv.diff_pct}%)`).join(' ') : ' | TWSE 備援自動啟用') + '</div>' : ''}
             ${freshnessHtml}`;
 

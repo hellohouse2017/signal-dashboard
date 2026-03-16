@@ -35,6 +35,7 @@ SANE_RANGES = {
     "Gold": (800, 15000),   # 黃金（2026 年已破 5000）
     "Yield":(0.5, 8),       # 10年殖利率
     "SMH":  (50, 500),      # 半導體 ETF
+    "00631L": (5, 500),     # 正2 ETF
 }
 
 def validate_data(df):
@@ -347,6 +348,7 @@ TICKER_MAP = {
     "Gold":  [("GC=F", None), ("GLD", lambda s: s / s.iloc[-1] * 3000)],
     "Yield": [("^TNX", None)],
     "SMH":   [("SMH", None)],
+    "00631L": [("00631L.TW", None)],
 }
 
 # 更嚴格的範圍檢查（用於防止欄位混淆）
@@ -358,6 +360,7 @@ STRICT_RANGES = {
     "Gold":  (1500, 8000),  # 近年金價 1800-5000+
     "Yield": (1.0, 6.0),    # 近年殖利率 1-5%
     "SMH":   (100, 400),    # 近年 SMH 在 150-350
+    "00631L": (10, 300),    # 正2 合理範圍
 }
 
 def _isolated_download(ticker, period=None, start=None, end=None):
@@ -765,6 +768,7 @@ def api_signal():
         result = calc_signal(latest)
         result["date"] = df.index[-1].strftime("%Y-%m-%d")
         result["price"] = round(latest["0050"], 2)
+        result["price_631l"] = round(latest["00631L"], 2) if "00631L" in latest and pd.notna(latest.get("00631L")) else None
 
         # 災難出場/進場條件
         result["catastrophe"] = calc_catastrophe(latest)
