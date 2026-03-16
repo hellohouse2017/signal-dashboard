@@ -1304,6 +1304,28 @@ def paper_portfolio():
 
     save_paper(paper)
 
+    # 退場信號 → TG 通知
+    exit_positions = [p for p in paper["positions"] if p.get("signal_type") in ("stop_loss", "trailing_stop")]
+    if exit_positions:
+        today = datetime.now().strftime("%Y-%m-%d")
+        alerts = []
+        for p in exit_positions:
+            key = f"exit_{today}_{p['ticker']}_{p['signal_type']}"
+            if key not in _tg_notified:
+                _tg_notified[key] = True
+                alerts.append(p)
+        if alerts:
+            msg = f"🚨 <b>模擬單退場信號 ({len(alerts)}支)</b>\n📅 {today}\n\n"
+            for p in alerts:
+                pnl_sign = "+" if p.get("pnl_pct", 0) >= 0 else ""
+                msg += f"{'🔴' if p['signal_type']=='stop_loss' else '🟡'} <b>{p['name']}</b> ({p['ticker']})\n"
+                msg += f"   信號：{p['signal']}\n"
+                msg += f"   買入 ${p['buy_price']} → 現價 ${p.get('current_price', '-')}\n"
+                msg += f"   報酬 {pnl_sign}{p.get('pnl_pct', 0)}% | 持有 {p.get('hold_days', '?')}天\n"
+                msg += f"   MA20 ${p.get('ma20', '-')} | 高點回落 {p.get('from_high', '-')}%\n\n"
+            msg += "⚡ 請至儀表板 → 策略 → 模擬單 執行賣出"
+            send_tg(msg)
+
     total_value = paper["cash"] + total_stock
     return jsonify({
         "status": "active",
