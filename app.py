@@ -9,6 +9,22 @@ import json, os, time
 from datetime import datetime, timedelta
 import traceback
 
+# MongoDB for persistent storage (Vercel-safe)
+try:
+    from pymongo import MongoClient
+    MONGODB_URI = os.environ.get("MONGODB_URI", "")
+    if MONGODB_URI:
+        _mongo_client = MongoClient(MONGODB_URI, serverSelectionTimeoutMS=5000)
+        _mongo_db = _mongo_client["signal_dashboard"]
+        _paper_col = _mongo_db["paper_trading"]
+        print("✅ MongoDB connected (signal_dashboard)")
+    else:
+        _paper_col = None
+        print("⚠️ MONGODB_URI not set, using file storage")
+except ImportError:
+    _paper_col = None
+    print("⚠️ pymongo not installed, using file storage")
+
 app = Flask(__name__)
 
 # ===== In-Memory Cache（避免 yfinance rate limit）=====
@@ -1148,13 +1164,22 @@ def api_stock_scanner():
 # ===== 模擬單 — Paper Trading =====
 
 PAPER_FILE = os.path.join(DATA_DIR, "paper_trading.json")
+PAPER_DEFAULT = {"capital": 500000, "cash": 500000, "positions": [], "trades": [], "started": None}
 
 def load_paper():
-    default = {"capital": 500000, "cash": 500000, "positions": [], "trades": [], "started": None}
-    return load_json(PAPER_FILE, default)
+    if _paper_col is not None:
+        doc = _paper_col.find_one({"_id": "main"})
+        if doc:
+            doc.pop("_id", None)
+            return doc
+        return dict(PAPER_DEFAULT)
+    return load_json(PAPER_FILE, dict(PAPER_DEFAULT))
 
 def save_paper(data):
-    save_json(PAPER_FILE, data)
+    if _paper_col is not None:
+        _paper_col.replace_one({"_id": "main"}, {**data, "_id": "main"}, upsert=True)
+    else:
+        save_json(PAPER_FILE, data)
 
 @app.route("/api/paper/portfolio")
 def paper_portfolio():
@@ -1361,7 +1386,9 @@ def paper_sell():
 @app.route("/api/paper/reset", methods=["POST"])
 def paper_reset():
     """重置模擬單"""
-    if os.path.exists(PAPER_FILE):
+    if _paper_col is not None:
+        _paper_col.delete_one({"_id": "main"})
+    elif os.path.exists(PAPER_FILE):
         os.remove(PAPER_FILE)
     return jsonify({"ok": True})
 

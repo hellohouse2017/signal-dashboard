@@ -1,3 +1,5 @@
 flask
 yfinance
 pandas
+pymongo
+dnspython
