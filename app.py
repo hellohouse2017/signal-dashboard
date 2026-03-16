@@ -761,7 +761,11 @@ def run_backtest(start, end):
 
 # ===== Routes =====
 
-DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+# Vercel serverless uses read-only filesystem; use /tmp for writable storage
+if os.environ.get("VERCEL"):
+    DATA_DIR = "/tmp/data"
+else:
+    DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
 os.makedirs(DATA_DIR, exist_ok=True)
 PORTFOLIO_FILE = os.path.join(DATA_DIR, "portfolio.json")
 TRADES_FILE = os.path.join(DATA_DIR, "trades.json")
