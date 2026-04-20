@@ -50,7 +50,7 @@ SANE_RANGES = {
     "Oil":  (10, 200),      # WTI 原油
     "Gold": (800, 15000),   # 黃金（2026 年已破 5000）
     "Yield":(0.5, 8),       # 10年殖利率
-    "SMH":  (50, 500),      # 半導體 ETF
+    "SMH":  (50, 700),      # 半導體 ETF（2026 已漲破 400）
 }
 
 def validate_data(df):
@@ -362,7 +362,7 @@ TICKER_MAP = {
     "Oil":   [("CL=F", None), ("USO", lambda s: s / s.iloc[-1] * 70)],
     "Gold":  [("GC=F", None), ("GLD", lambda s: s / s.iloc[-1] * 3000)],
     "Yield": [("^TNX", None)],
-    "SMH":   [("SMH", None)],
+    "SMH":   [("SMH", None), ("SOXX", lambda s: s / s.iloc[-1] * 250)],
     "00631L": [("00631L.TW", None)],
 }
 
@@ -374,7 +374,7 @@ STRICT_RANGES = {
     "Oil":   (30, 150),     # 近年油價 40-130
     "Gold":  (1500, 8000),  # 近年金價 1800-5000+
     "Yield": (1.0, 6.0),    # 近年殖利率 1-5%
-    "SMH":   (100, 400),    # 近年 SMH 在 150-350
+    "SMH":   (100, 600),    # 近年 SMH 已漲破 400（2026）
 }
 
 def _isolated_download(ticker, period=None, start=None, end=None):
@@ -461,6 +461,18 @@ def fetch_data(period="3mo"):
     # 把 display-only 欄位 join 回去（允許 NaN）
     for name, series in display_only.items():
         result[name] = series.reindex(result.index).ffill()
+
+    # === 0050 停滯修正：TWSE 即時價格優先 ===
+    if "0050" in result.columns and len(result) >= 3:
+        last3 = result["0050"].tail(3).tolist()
+        if last3[0] == last3[1] == last3[2]:  # 連續3天相同 → 可能停滯
+            twse = fetch_twse_0050()
+            if twse and twse["value"] > 0:
+                twse_price = twse["value"]
+                if abs(twse_price - last3[-1]) / last3[-1] > 0.001:  # 價格確實不同
+                    result.iloc[-1, result.columns.get_loc("0050")] = twse_price
+                    print(f"[FIX] 0050 停滯修正：{last3[-1]:.2f} → TWSE {twse_price:.2f}")
+
     cache_set(cache_key, result)
     return result
 
