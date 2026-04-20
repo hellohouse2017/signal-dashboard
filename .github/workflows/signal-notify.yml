@@ -14,12 +14,19 @@ jobs:
       - name: Fetch signal data from Dashboard
         id: signal
         run: |
-          RESPONSE=$(curl -sf "https://signal-dashboard-ashy.vercel.app/api/signal" || echo "FAILED")
+          RESPONSE=$(curl -sf --max-time 30 "https://signal-dashboard-ashy.vercel.app/api/signal" || echo "FAILED")
           if [ "$RESPONSE" = "FAILED" ]; then
             echo "status=error" >> $GITHUB_OUTPUT
           else
-            echo "data=$RESPONSE" >> $GITHUB_OUTPUT
-            echo "status=ok" >> $GITHUB_OUTPUT
+            # 檢查是否回傳 error
+            HAS_ERROR=$(echo "$RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print('yes' if 'error' in d else 'no')" 2>/dev/null || echo "yes")
+            if [ "$HAS_ERROR" = "yes" ]; then
+              echo "status=api_error" >> $GITHUB_OUTPUT
+              echo "data=$RESPONSE" >> $GITHUB_OUTPUT
+            else
+              echo "data=$RESPONSE" >> $GITHUB_OUTPUT
+              echo "status=ok" >> $GITHUB_OUTPUT
+            fi
           fi
 
       - name: Parse signal and send TG notification
@@ -30,22 +37,47 @@ jobs:
         run: |
           DATA='${{ steps.signal.outputs.data }}'
 
-          SCORE=$(echo "$DATA" | python3 -c "import sys,json; print(json.load(sys.stdin)['score'])")
-          PRICE=$(echo "$DATA" | python3 -c "import sys,json; print(json.load(sys.stdin)['price'])")
-          DATE=$(echo "$DATA" | python3 -c "import sys,json; print(json.load(sys.stdin)['date'])")
+          # 解析基本資訊
+          PARSED=$(echo "$DATA" | python3 -c "
+          import sys, json
+          d = json.load(sys.stdin)
+          cat = d.get('catastrophe', {})
+          print(d.get('score', 0))
+          print(d.get('price', 0))
+          print(d.get('date', 'unknown'))
+          print(cat.get('status', 'normal'))
+          print(cat.get('exit_score', 0))
+          print(cat.get('entry_score', 0))
+          print(cat.get('consec_days', 0))
+          print(d.get('data_valid', True))
+          print(d.get('data_age_days', 0))
+          # 數據警告
+          warnings = d.get('data_warnings', [])
+          print('|'.join(warnings) if warnings else 'none')
+          # 00631L 價格
+          print(d.get('price_631l', 'N/A'))
+          ")
 
-          # 災難出場條件（核心策略）
-          CAT_STATUS=$(echo "$DATA" | python3 -c "import sys,json; print(json.load(sys.stdin).get('catastrophe',{}).get('status','normal'))")
-          EXIT_SCORE=$(echo "$DATA" | python3 -c "import sys,json; print(json.load(sys.stdin).get('catastrophe',{}).get('exit_score',0))")
-          ENTRY_SCORE=$(echo "$DATA" | python3 -c "import sys,json; print(json.load(sys.stdin).get('catastrophe',{}).get('entry_score',0))")
+          SCORE=$(echo "$PARSED" | sed -n '1p')
+          PRICE=$(echo "$PARSED" | sed -n '2p')
+          DATE=$(echo "$PARSED" | sed -n '3p')
+          CAT_STATUS=$(echo "$PARSED" | sed -n '4p')
+          EXIT_SCORE=$(echo "$PARSED" | sed -n '5p')
+          ENTRY_SCORE=$(echo "$PARSED" | sed -n '6p')
+          CONSEC_DAYS=$(echo "$PARSED" | sed -n '7p')
+          DATA_VALID=$(echo "$PARSED" | sed -n '8p')
+          DATA_AGE=$(echo "$PARSED" | sed -n '9p')
+          WARNINGS=$(echo "$PARSED" | sed -n '10p')
+          PRICE_631L=$(echo "$PARSED" | sed -n '11p')
 
-          echo "Catastrophe status: $CAT_STATUS (exit: $EXIT_SCORE/5, entry: $ENTRY_SCORE/4)"
+          echo "Status: $CAT_STATUS | Exit: $EXIT_SCORE/5 | Entry: $ENTRY_SCORE/4 | Consec: $CONSEC_DAYS"
 
+          # 組合訊息
           case "$CAT_STATUS" in
-            "exit_triggered")
-              MSG="🚨🚨🚨 災難出場觸發！立即賣出！
-          🛡️ 出場條件：${EXIT_SCORE}/5（≥3 觸發）
-          📈 0050：${PRICE} 元
+            "exit_confirmed")
+              MSG="🚨🚨🚨 災難出場確認！立即賣出！
+          🛡️ 出場條件：${EXIT_SCORE}/5（連續 ${CONSEC_DAYS} 天 ≥3）
+          📈 0050：${PRICE} 元 | 00631L：${PRICE_631L} 元
           🎯 評分：${SCORE}
           📅 日期：${DATE}
 
@@ -54,33 +86,61 @@ jobs:
           ⚠️ 冷卻期 5 天"
               ;;
             "exit_warning")
-              MSG="⚠️ 出場預警！密切注意
-          🛡️ 出場條件：${EXIT_SCORE}/5（接近觸發）
-          📈 0050：${PRICE} 元
+              MSG="⚠️⚠️ 出場預警！第 ${CONSEC_DAYS} 天亮燈
+          🛡️ 出場條件：${EXIT_SCORE}/5（再 1 天確認出場）
+          📈 0050：${PRICE} 元 | 00631L：${PRICE_631L} 元
           🎯 評分：${SCORE}
           📅 日期：${DATE}
 
           👉 繼續持有，但明天務必再檢查
-          💡 再多 1 個條件就觸發出場"
+          💡 連續 2 天 ≥3 條件才觸發出場"
               ;;
-            "entry_safe")
-              MSG="✅ 安全進場！加碼買入
-          🟢 進場條件：${ENTRY_SCORE}/4（≥3 觸發）
-          📈 0050：${PRICE} 元
+            "exit_caution")
+              MSG="⚠️ 出場注意：${EXIT_SCORE}/5 條件亮燈
+          📈 0050：${PRICE} 元 | 00631L：${PRICE_631L} 元
           🎯 評分：${SCORE}
           📅 日期：${DATE}
 
-          👉 恐慌基金拿 20 萬，開盤買入 0050/00631L
-          💡 市場已安全，回場 + 加碼"
+          👉 繼續持有，密切關注
+          💡 再多 1 個條件就進入預警"
+              ;;
+            "entry_safe")
+              MSG="✅ 安全進場！可加碼買入
+          🟢 進場條件：${ENTRY_SCORE}/4（≥3 觸發）
+          📈 0050：${PRICE} 元 | 00631L：${PRICE_631L} 元
+          🎯 評分：${SCORE}
+          📅 日期：${DATE}
+
+          👉 市場已安全，回場 + 加碼
+          💡 恐慌基金拿 20 萬，開盤買入 0050/00631L"
               ;;
             *)
               MSG="😎 每日信號：正常持有
-          📈 0050：${PRICE} 元｜評分：${SCORE}
-          🛡️ 出場 ${EXIT_SCORE}/5 進場 ${ENTRY_SCORE}/4
+          📈 0050：${PRICE} 元 | 00631L：${PRICE_631L} 元
+          🛡️ 出場 ${EXIT_SCORE}/5 | 進場 ${ENTRY_SCORE}/4
+          🎯 評分：${SCORE}
           📅 ${DATE}
           ✅ 不需操作"
               ;;
           esac
+
+          # 附加數據警告
+          if [ "$DATA_VALID" = "False" ]; then
+            MSG="${MSG}
+
+          ⚠️ 數據異常警告："
+            IFS='|' read -ra WARN_ARR <<< "$WARNINGS"
+            for w in "${WARN_ARR[@]}"; do
+              if [ "$w" != "none" ]; then
+                MSG="${MSG}
+          ${w}"
+              fi
+            done
+          elif [ "$DATA_AGE" -gt 3 ] 2>/dev/null; then
+            MSG="${MSG}
+
+          ⚠️ 數據已 ${DATA_AGE} 天未更新（最後：${DATE}）"
+          fi
 
           # 發送 TG
           curl -sf "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
@@ -88,7 +148,21 @@ jobs:
             --data-urlencode "text=${MSG}"
           echo "TG notification sent!"
 
-      - name: Send error notification
+      - name: Send API error notification
+        if: steps.signal.outputs.status == 'api_error'
+        env:
+          TG_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT: ${{ secrets.TG_CHAT_ID }}
+        run: |
+          DATA='${{ steps.signal.outputs.data }}'
+          ERROR_MSG=$(echo "$DATA" | python3 -c "import sys,json; print(json.load(sys.stdin).get('error','未知錯誤'))" 2>/dev/null || echo "解析失敗")
+          curl -sf "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
+            -d "chat_id=${TG_CHAT}" \
+            --data-urlencode "text=❌ Dashboard API 回傳錯誤！
+          錯誤：${ERROR_MSG}
+          請手動檢查：https://signal-dashboard-ashy.vercel.app/api/signal"
+
+      - name: Send connection error notification
         if: steps.signal.outputs.status == 'error'
         env:
           TG_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
@@ -96,4 +170,4 @@ jobs:
         run: |
           curl -sf "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
             -d "chat_id=${TG_CHAT}" \
-            -d "text=❌ Dashboard 信號檢查失敗！請手動查看"
+            -d "text=❌ Dashboard 連線失敗！無法取得信號數據。請手動檢查 https://signal-dashboard-ashy.vercel.app/api/signal"

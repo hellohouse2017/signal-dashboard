@@ -1,6 +1,7 @@
 .vercel
-scanner/market_data.db
+scanner/市場數據.db
 scanner/*.log
 data/
 __pycache__/
 *.pyc
+scanner/.env

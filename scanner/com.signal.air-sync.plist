@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.signal.air-sync</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/tangyukao/Documents/Antigravity/選股策略/scanner/sync_air.sh</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/Users/tangyukao/Documents/Antigravity/選股策略</string>
+    <!-- 登入時執行一次 -->
+    <key>RunAtLoad</key>
+    <true/>
+    <!-- 也在每天 07:00 跑一次（如果 Air 整天開著） -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>7</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>/tmp/signal-air-sync.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/signal-air-sync.err</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+</dict>
+</plist>
