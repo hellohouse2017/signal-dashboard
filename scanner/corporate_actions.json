@@ -1,0 +1,266 @@
+[
+  {
+    "ticker": "0050.TW",
+    "ex_date": "2005-07-14",
+    "action": "cash_dividend",
+    "ratio": null,
+    "cash_dividend": 1.85,
+    "note": "93年度配息"
+  },
+  {
+    "ticker": "0050.TW",
+    "ex_date": "2006-07-14",
+    "action": "cash_dividend",
+    "ratio": null,
+    "cash_dividend": 4.0,
+    "note": "94年度配息"
+  },
+  {
+    "ticker": "0050.TW",
+    "ex_date": "2007-07-16",
+    "action": "cash_dividend",
+    "ratio": null,
+    "cash_dividend": 2.5,
+    "note": "95年度配息"
+  },
+  {
+    "ticker": "0050.TW",
+    "ex_date": "2008-07-14",
+    "action": "cash_dividend",
+    "ratio": null,
+    "cash_dividend": 2.0,
+    "note": "96年度配息"
+  },
+  {
+    "ticker": "0050.TW",
+    "ex_date": "2009-07-14",
+    "action": "cash_dividend",
+    "ratio": null,
+    "cash_dividend": 1.0,
+    "note": "97年度配息"
+  },
+  {
+    "ticker": "0050.TW",
+    "ex_date": "2010-07-14",
+    "action": "cash_dividend",
+    "ratio": null,
+    "cash_dividend": 2.2,
+    "note": "98年度配息"
+  },
+  {
+    "ticker": "0050.TW",
+    "ex_date": "2011-07-14",
+    "action": "cash_dividend",
+    "ratio": null,
+    "cash_dividend": 1.95,
+    "note": "99年度配息"
+  },
+  {
+    "ticker": "0050.TW",
+    "ex_date": "2012-07-16",
+    "action": "cash_dividend",
+    "ratio": null,
+    "cash_dividend": 1.85,
+    "note": "100年度配息"
+  },
+  {
+    "ticker": "0050.TW",
+    "ex_date": "2013-07-15",
+    "action": "cash_dividend",
+    "ratio": null,
+    "cash_dividend": 1.35,
+    "note": "101年度配息"
+  },
+  {
+    "ticker": "0050.TW",
+    "ex_date": "2014-07-14",
+    "action": "cash_dividend",
+    "ratio": null,
+    "cash_dividend": 1.55,
+    "note": "102年度配息"
+  },
+  {
+    "ticker": "0050.TW",
+    "ex_date": "2015-07-14",
+    "action": "cash_dividend",
+    "ratio": null,
+    "cash_dividend": 2.0,
+    "note": "103年度配息"
+  },
+  {
+    "ticker": "0050.TW",
+    "ex_date": "2016-07-14",
+    "action": "cash_dividend",
+    "ratio": null,
+    "cash_dividend": 0.85,
+    "note": "104年度配息"
+  },
+  {
+    "ticker": "0050.TW",
+    "ex_date": "2017-01-24",
+    "action": "cash_dividend",
+    "ratio": null,
+    "cash_dividend": 1.7,
+    "note": "105年H1配息"
+  },
+  {
+    "ticker": "0050.TW",
+    "ex_date": "2017-07-21",
+    "action": "cash_dividend",
+    "ratio": null,
+    "cash_dividend": 0.7,
+    "note": "105年H2配息"
+  },
+  {
+    "ticker": "0050.TW",
+    "ex_date": "2018-01-22",
+    "action": "cash_dividend",
+    "ratio": null,
+    "cash_dividend": 2.2,
+    "note": "106年H1配息"
+  },
+  {
+    "ticker": "0050.TW",
+    "ex_date": "2018-07-23",
+    "action": "cash_dividend",
+    "ratio": null,
+    "cash_dividend": 0.7,
+    "note": "106年H2配息"
+  },
+  {
+    "ticker": "0050.TW",
+    "ex_date": "2019-01-22",
+    "action": "cash_dividend",
+    "ratio": null,
+    "cash_dividend": 2.3,
+    "note": "107年H1配息"
+  },
+  {
+    "ticker": "0050.TW",
+    "ex_date": "2019-07-19",
+    "action": "cash_dividend",
+    "ratio": null,
+    "cash_dividend": 0.7,
+    "note": "107年H2配息"
+  },
+  {
+    "ticker": "0050.TW",
+    "ex_date": "2020-01-31",
+    "action": "cash_dividend",
+    "ratio": null,
+    "cash_dividend": 2.9,
+    "note": "108年H1配息"
+  },
+  {
+    "ticker": "0050.TW",
+    "ex_date": "2020-07-21",
+    "action": "cash_dividend",
+    "ratio": null,
+    "cash_dividend": 0.7,
+    "note": "108年H2配息"
+  },
+  {
+    "ticker": "0050.TW",
+    "ex_date": "2021-01-22",
+    "action": "cash_dividend",
+    "ratio": null,
+    "cash_dividend": 3.05,
+    "note": "109年H1配息"
+  },
+  {
+    "ticker": "0050.TW",
+    "ex_date": "2021-07-21",
+    "action": "cash_dividend",
+    "ratio": null,
+    "cash_dividend": 0.35,
+    "note": "109年H2配息"
+  },
+  {
+    "ticker": "0050.TW",
+    "ex_date": "2022-01-21",
+    "action": "cash_dividend",
+    "ratio": null,
+    "cash_dividend": 3.2,
+    "note": "110年H1配息"
+  },
+  {
+    "ticker": "0050.TW",
+    "ex_date": "2022-07-18",
+    "action": "cash_dividend",
+    "ratio": null,
+    "cash_dividend": 1.8,
+    "note": "110年H2配息"
+  },
+  {
+    "ticker": "0050.TW",
+    "ex_date": "2023-01-30",
+    "action": "cash_dividend",
+    "ratio": null,
+    "cash_dividend": 2.6,
+    "note": "111年H1配息"
+  },
+  {
+    "ticker": "0050.TW",
+    "ex_date": "2023-07-18",
+    "action": "cash_dividend",
+    "ratio": null,
+    "cash_dividend": 1.9,
+    "note": "111年H2配息"
+  },
+  {
+    "ticker": "0050.TW",
+    "ex_date": "2024-01-17",
+    "action": "cash_dividend",
+    "ratio": null,
+    "cash_dividend": 3.0,
+    "note": "112年H1配息"
+  },
+  {
+    "ticker": "0050.TW",
+    "ex_date": "2024-07-16",
+    "action": "cash_dividend",
+    "ratio": null,
+    "cash_dividend": 1.0,
+    "note": "112年H2配息"
+  },
+  {
+    "ticker": "0050.TW",
+    "ex_date": "2025-01-17",
+    "action": "cash_dividend",
+    "ratio": null,
+    "cash_dividend": 2.7,
+    "note": "113年H1配息 (拆分前面額)"
+  },
+  {
+    "ticker": "0050.TW",
+    "ex_date": "2025-06-18",
+    "action": "split",
+    "ratio": 4.0,
+    "cash_dividend": null,
+    "note": "1:4 分割 (舊1→新4)"
+  },
+  {
+    "ticker": "0050.TW",
+    "ex_date": "2025-07-21",
+    "action": "cash_dividend",
+    "ratio": null,
+    "cash_dividend": 0.36,
+    "note": "113年H2配息 (拆分後面額)"
+  },
+  {
+    "ticker": "0050.TW",
+    "ex_date": "2026-01-22",
+    "action": "cash_dividend",
+    "ratio": null,
+    "cash_dividend": 1.0,
+    "note": "114年H1配息 (拆分後面額)"
+  },
+  {
+    "ticker": "00631L.TW",
+    "ex_date": "2026-03-31",
+    "action": "split",
+    "ratio": 22.0,
+    "cash_dividend": null,
+    "note": "1:22 分割 (舊1→新22)"
+  }
+]

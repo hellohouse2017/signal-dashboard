@@ -47,6 +47,7 @@ import urllib.parse
 # ── 設定 ──────────────────────────────────────────
 SCRIPT_DIR = Path(__file__).parent
 DB_PATH = SCRIPT_DIR / "回測_0050還原數據.db"
+CORP_ACTIONS_JSON = SCRIPT_DIR / "corporate_actions.json"
 
 # TWSE 標的: (ticker_in_db, twse_stock_no, 描述)
 TWSE_TARGETS = [
@@ -119,6 +120,74 @@ def send_tg_alert(message: str) -> bool:
     except Exception as e:
         print(f"  ❌ TG 發送失敗: {e}")
         return False
+
+# ── corporate_actions 同步 ────────────────────────
+CORP_ACTIONS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS corporate_actions (
+    ticker TEXT NOT NULL,
+    ex_date TEXT NOT NULL,
+    action TEXT NOT NULL,
+    ratio REAL,
+    cash_dividend REAL,
+    note TEXT,
+    PRIMARY KEY (ticker, ex_date, action)
+)
+"""
+
+
+def sync_corporate_actions(conn: sqlite3.Connection, dry_run: bool) -> dict[str, int]:
+    """將 corporate_actions.json 同步到 DB (JSON 為 source of truth)
+
+    行為:
+      - JSON 有的: upsert 進 DB
+      - DB 有但 JSON 沒有的: 刪除 (避免兩邊漂移)
+    回傳: {"upserted": N, "deleted": M}
+    """
+    if not CORP_ACTIONS_JSON.exists():
+        print(f"  ⚠️ 找不到 {CORP_ACTIONS_JSON.name}, 跳過事件同步")
+        return {"upserted": 0, "deleted": 0}
+
+    events = json.loads(CORP_ACTIONS_JSON.read_text(encoding="utf-8"))
+    conn.execute(CORP_ACTIONS_SCHEMA)
+
+    json_keys = {(e["ticker"], e["ex_date"], e["action"]) for e in events}
+    db_keys = {
+        (r[0], r[1], r[2])
+        for r in conn.execute(
+            "SELECT ticker, ex_date, action FROM corporate_actions"
+        )
+    }
+    to_delete = db_keys - json_keys
+
+    print(f"  📋 JSON {len(events)} 筆 / DB {len(db_keys)} 筆", end="")
+    if dry_run:
+        print(f" [DRY RUN] 會 upsert {len(events)}, 刪除 {len(to_delete)}")
+        return {"upserted": -1, "deleted": -1}
+    print()
+
+    upserted = 0
+    for e in events:
+        conn.execute(
+            "INSERT OR REPLACE INTO corporate_actions "
+            "(ticker, ex_date, action, ratio, cash_dividend, note) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (e["ticker"], e["ex_date"], e["action"],
+             e.get("ratio"), e.get("cash_dividend"), e.get("note")),
+        )
+        upserted += 1
+
+    deleted = 0
+    for k in to_delete:
+        conn.execute(
+            "DELETE FROM corporate_actions WHERE ticker=? AND ex_date=? AND action=?",
+            k,
+        )
+        deleted += 1
+
+    conn.commit()
+    print(f"    → upsert {upserted} 筆, 刪除 {deleted} 筆")
+    return {"upserted": upserted, "deleted": deleted}
+
 
 # ── TWSE 更新 ──────────────────────────────────────
 def get_last_date_in_db(conn: sqlite3.Connection, ticker: str) -> str | None:
@@ -328,6 +397,7 @@ def git_push_json() -> bool:
     """將 JSON 變更 commit + push (給 Mini 排程用)"""
     repo_root = SCRIPT_DIR.parent  # 選股策略/
     json_files = [f"scanner/{t[1]}" for t in YF_JSON_TARGETS]
+    json_files.append("scanner/corporate_actions.json")
 
     try:
         # 先 add 指定的 JSON 檔
@@ -400,6 +470,10 @@ def main():
     )
 
     all_results = {}
+
+    # 0. 同步 corporate_actions (JSON → DB)
+    print("\n[0/3] 事件表同步 (corporate_actions.json → DB)")
+    ca_r = sync_corporate_actions(conn, args.dry_run)
 
     # 1. TWSE
     if not args.yf_only:

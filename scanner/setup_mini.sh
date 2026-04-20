@@ -56,7 +56,7 @@ fi
 # 4. 首次 git add JSON
 echo ""
 echo "[4/5] Git add JSON 歷史資料..."
-JSON_FILES="scanner/VIX歷史.json scanner/VIX9D歷史.json scanner/VIX3M歷史.json scanner/SMH歷史.json"
+JSON_FILES="scanner/VIX歷史.json scanner/VIX9D歷史.json scanner/VIX3M歷史.json scanner/SMH歷史.json scanner/corporate_actions.json"
 NEED_COMMIT=false
 for f in $JSON_FILES; do
     if [ -f "$f" ]; then
