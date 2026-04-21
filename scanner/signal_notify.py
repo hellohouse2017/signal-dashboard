@@ -96,23 +96,32 @@ def load_adjusted_prices(ticker: str) -> dict[str, float]:
     return {d: v["close"] for d, v in adj.items() if v["close"] is not None}
 
 
-def fetch_today_close_yf(yf_ticker: str) -> float | None:
-    """用 yfinance 即時抓取今日收盤價（收盤後 ~5 分鐘可用）"""
-    try:
-        import yfinance as yf
-        ticker = yf.Ticker(yf_ticker)
-        hist = ticker.history(period="1d")
-        if hist.empty:
-            return None
-        close_val = float(hist["Close"].iloc[-1])
-        actual_date = hist.index[-1].strftime("%Y-%m-%d")
-        if actual_date == date.today().isoformat():
-            return close_val
-        # yfinance 回傳的不是今天 → 今天可能非交易日
-        return None
-    except Exception as e:
-        print(f"  ⚠️ yfinance {yf_ticker} 即時抓取失敗: {e}")
-        return None
+def fetch_today_close_yf(yf_ticker: str, max_retries: int = 3,
+                         retry_interval: int = 120) -> float | None:
+    """用 yfinance 即時抓取今日收盤價（收盤後 ~5 分鐘可用）
+
+    max_retries: 最多重試次數（含首次）
+    retry_interval: 重試間隔秒數（預設 120 秒）
+    """
+    import time as _time
+    for attempt in range(max_retries):
+        try:
+            import yfinance as yf
+            ticker = yf.Ticker(yf_ticker)
+            hist = ticker.history(period="1d")
+            if not hist.empty:
+                close_val = float(hist["Close"].iloc[-1])
+                actual_date = hist.index[-1].strftime("%Y-%m-%d")
+                if actual_date == date.today().isoformat():
+                    return close_val
+        except Exception as e:
+            print(f"  ⚠️ yfinance {yf_ticker} 抓取失敗: {e}")
+
+        if attempt < max_retries - 1:
+            print(f"  ⏳ {yf_ticker} 今日資料尚未就緒，{retry_interval}s 後重試 ({attempt+2}/{max_retries})")
+            _time.sleep(retry_interval)
+
+    return None
 
 
 # ── TG ───────────────────────────────────────────
