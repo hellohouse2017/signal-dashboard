@@ -10,3 +10,4 @@ scanner/.env
 .DS_Store
 .vscode/
 AGENTS.md
+scanner/.signal_state.json

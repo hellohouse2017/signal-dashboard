@@ -138,7 +138,15 @@ def send_tg(message: str) -> bool:
 def load_state() -> dict:
     if STATE_FILE.exists():
         return json.loads(STATE_FILE.read_text())
-    return {"consec_days": 0, "last_status": "normal", "last_date": ""}
+    return {
+        "consec_days": 0,
+        "sell_streak": 0,      # v2.1 漸進門檻
+        "quiet_days": 0,       # 持倉安靜天數（重置 sell_streak 用）
+        "position": "holding", # holding / out
+        "out_low": None,       # 出場後最低價（回場條件 C）
+        "last_status": "normal",
+        "last_date": "",
+    }
 
 
 def save_state(state: dict):
@@ -218,19 +226,58 @@ def calc_signal() -> dict:
         state["consec_days"] = 0
 
     consec = state["consec_days"]
-    exit_confirmed = disaster and consec >= 2
-    entry_safe = not disaster and n_conds <= 1  # 寬鬆安全: ≤1 條件
+    sell_streak = state.get("sell_streak", 0)
+    position = state.get("position", "holding")
 
-    if exit_confirmed:
-        status = "exit_confirmed"
-    elif disaster:
-        status = "exit_warning"
-    elif n_conds >= 2:
-        status = "exit_caution"
-    elif entry_safe and state.get("last_status") in ("exit_confirmed", "exit_warning"):
-        status = "entry_safe"
-    else:
-        status = "normal"
+    # v2.1 漸進出場門檻
+    sell_threshold = 2 + sell_streak
+    exit_confirmed = disaster and consec >= sell_threshold
+
+    # 判斷狀態
+    if position == "holding":
+        if exit_confirmed:
+            status = "exit_confirmed"
+            state["sell_streak"] = sell_streak + 1
+            state["quiet_days"] = 0
+            state["position"] = "out"
+            state["out_low"] = p631l  # 記錄出場時價格
+        elif disaster:
+            status = "exit_warning"
+            state["quiet_days"] = 0
+        elif n_conds >= 2:
+            status = "exit_caution"
+            state["quiet_days"] = 0
+        else:
+            status = "normal"
+            # v2.1: 連續 30 天非災難 → 重置 sell_streak
+            state["quiet_days"] = state.get("quiet_days", 0) + 1
+            if state["quiet_days"] >= 30:
+                state["sell_streak"] = 0
+
+    elif position == "out":
+        # 追蹤出場後最低價
+        out_low = state.get("out_low")
+        if p631l and (out_low is None or p631l < out_low):
+            state["out_low"] = p631l
+            out_low = p631l
+
+        # v2.1 三選一回場條件
+        reentry_reason = None
+        if not disaster:  # A: 非災難
+            reentry_reason = f"非災難回場（{n_conds}/4）"
+        # B: 00631L 單日漲幅 ≥ 8%（需要前日價，簡化：跳過）
+        # C: 從出場後最低反彈 ≥ 20%
+        if not reentry_reason and p631l and out_low and out_low > 0:
+            bounce = (p631l / out_low - 1)
+            if bounce >= 0.20:
+                reentry_reason = f"反彈回場（+{bounce*100:.1f}%）"
+
+        if reentry_reason:
+            status = "entry_safe"
+            state["position"] = "holding"
+            state["out_low"] = None
+        else:
+            status = "still_out"
 
     state["last_status"] = status
     state["last_date"] = latest_0050_date
@@ -251,6 +298,9 @@ def calc_signal() -> dict:
         "status": status,
         "n_conds": n_conds,
         "consec_days": consec,
+        "sell_threshold": 2 + state.get("sell_streak", 0),
+        "sell_streak": state.get("sell_streak", 0),
+        "position": state.get("position", "holding"),
         "conditions": conditions,
         "prices": {
             "0050": round(p50, 2) if p50 else None,
@@ -284,18 +334,21 @@ def format_message(sig: dict) -> str:
     conds_text = "\n".join(cond_lines)
 
     if status == "exit_confirmed":
-        header = "🚨🚨🚨 災難出場確認！立即賣出！"
+        header = "‼️‼️‼️ 災難出場確認！立即賣出！"
+        threshold = sig.get("sell_threshold", 2)
         action = (
-            f"🛡️ 出場條件：{n}/4（連續 {consec} 天 ≥3）\n\n"
-            f"👉 全部賣出 0050/00631L，持有現金\n"
+            f"🛡️ 出場條件：{n}/4（連續 {consec} 天 ≥ 門檻{threshold}）\n\n"
+            f"👉 全部賣出 00631L，持有現金\n"
             f"👉 等待安全進場信號再買回"
         )
     elif status == "exit_warning":
+        threshold = sig.get("sell_threshold", 2)
+        remain = threshold - consec
         header = f"⚠️⚠️ 出場預警！第 {consec} 天亮燈"
         action = (
-            f"🛡️ 出場條件：{n}/4（再 1 天確認出場）\n\n"
+            f"🛡️ 出場條件：{n}/4（門檻 {threshold} 天，還差 {remain} 天）\n\n"
             f"👉 繼續持有，但明天務必再檢查\n"
-            f"💡 連續 2 天 ≥3 條件才觸發出場"
+            f"💡 連續 {threshold} 天 ≥3 條件才觸發出場"
         )
     elif status == "exit_caution":
         header = f"⚠️ 出場注意：{n}/4 條件亮燈"
@@ -304,10 +357,17 @@ def format_message(sig: dict) -> str:
             f"💡 再多 1 個條件就進入預警"
         )
     elif status == "entry_safe":
-        header = "✅ 安全進場！可加碼買入"
+        header = "✅ 安全進場！可買入"
         action = (
-            f"🟢 進場條件：{n}/4（≤1 觸發）\n\n"
-            f"👉 市場已安全，回場 + 加碼"
+            f"🟢 回場條件已滿足\n\n"
+            f"👉 市場已安全，回場持有 00631L"
+        )
+    elif status == "still_out":
+        header = "💭 等待回場中…"
+        action = (
+            f"🔴 出場條件：{n}/4\n"
+            f"👉 持有現金，等待回場信號\n"
+            f"💡 回場條件：n<3 / 單日+8% / 低點反彈+20%"
         )
     else:
         header = "😎 每日信號：正常持有"
