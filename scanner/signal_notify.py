@@ -60,14 +60,14 @@ def sma(data: dict[str, float], dates: list[str], window: int) -> dict[str, floa
     return result
 
 
-def expanding_max(data: dict[str, float], dates: list[str]) -> dict[str, float]:
-    """計算歷史最高值"""
+def rolling_max(data: dict[str, float], dates: list[str], window: int = 60) -> dict[str, float]:
+    """計算 N 日滾動最高值（避免企業行為造成的歷史高點失真）"""
     result = {}
-    mx = None
+    vals = []
     for d in dates:
         if d in data:
-            mx = max(mx, data[d]) if mx is not None else data[d]
-            result[d] = mx
+            vals.append(data[d])
+            result[d] = max(vals[-window:])
     return result
 
 
@@ -178,7 +178,7 @@ def calc_signal() -> dict:
     ma120_0050 = sma(p0050_all, all_dates, 120)
     ma30_smh = sma(smh_all, all_dates, 30)
     ma60_smh = sma(smh_all, all_dates, 60)
-    exp_max_631l = expanding_max(p631l_all, all_dates)
+    rolling_max_631l = rolling_max(p631l_all, all_dates, 60)
 
     # 取最新值
     p50 = p0050_all.get(latest_0050_date)
@@ -195,12 +195,12 @@ def calc_signal() -> dict:
 
     # 00631L 最新 (取和 0050 同日或最近)
     p631l = p631l_all.get(latest_0050_date)
-    mx631l = exp_max_631l.get(latest_0050_date)
+    mx631l = rolling_max_631l.get(latest_0050_date)
 
     # 4 個出場條件 (h_v2_1)
     c1 = bool(p50 and ma60 and ma120 and p50 < ma60 and p50 < ma120)
     c2 = bool(vix and vix9d and vix3m and vix > 28 and vix9d > 28 and vix3m > 28)
-    c3 = bool(p631l and mx631l and (p631l / mx631l - 1) < -0.10)
+    c3 = bool(p631l and mx631l and mx631l > 0 and (p631l / mx631l - 1) < -0.10)
     c4 = bool(smh and s30 and s60 and smh < s30 and smh < s60)
 
     n_conds = sum([c1, c2, c3, c4])
