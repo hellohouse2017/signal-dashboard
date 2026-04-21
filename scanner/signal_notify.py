@@ -178,7 +178,8 @@ def calc_signal() -> dict:
     ma120_0050 = sma(p0050_all, all_dates, 120)
     ma30_smh = sma(smh_all, all_dates, 30)
     ma60_smh = sma(smh_all, all_dates, 60)
-    rolling_max_631l = rolling_max(p631l_all, all_dates, 60)
+    # 00631L 2026-03 反分割，用短窗口避免包含分割前的虛高價格
+    rolling_max_631l = rolling_max(p631l_all, all_dates, 20)
 
     # 取最新值
     p50 = p0050_all.get(latest_0050_date)
@@ -200,7 +201,10 @@ def calc_signal() -> dict:
     # 4 個出場條件 (h_v2_1)
     c1 = bool(p50 and ma60 and ma120 and p50 < ma60 and p50 < ma120)
     c2 = bool(vix and vix9d and vix3m and vix > 28 and vix9d > 28 and vix3m > 28)
-    c3 = bool(p631l and mx631l and mx631l > 0 and (p631l / mx631l - 1) < -0.10)
+    # 安全檢查：如果 max 是 current 的 2 倍以上，代表窗口跨越了分割事件，跳過
+    c3_raw = bool(p631l and mx631l and mx631l > 0 and (p631l / mx631l - 1) < -0.10)
+    c3_sane = not (mx631l and p631l and mx631l > p631l * 2)  # max 不應超過 current 2 倍
+    c3 = c3_raw and c3_sane
     c4 = bool(smh and s30 and s60 and smh < s30 and smh < s60)
 
     n_conds = sum([c1, c2, c3, c4])
