@@ -60,14 +60,14 @@ def sma(data: dict[str, float], dates: list[str], window: int) -> dict[str, floa
     return result
 
 
-def rolling_max(data: dict[str, float], dates: list[str], window: int = 60) -> dict[str, float]:
-    """計算 N 日滾動最高值（避免企業行為造成的歷史高點失真）"""
+def expanding_max(data: dict[str, float], dates: list[str]) -> dict[str, float]:
+    """計算 expanding window 最高值（歷史最高點）"""
     result = {}
-    vals = []
+    cur_max = float('-inf')
     for d in dates:
         if d in data:
-            vals.append(data[d])
-            result[d] = max(vals[-window:])
+            cur_max = max(cur_max, data[d])
+            result[d] = cur_max
     return result
 
 
@@ -87,6 +87,13 @@ def load_db_prices(conn: sqlite3.Connection, ticker: str,
         (ticker, limit),
     ).fetchall()
     return {r[0]: r[1] for r in rows}
+
+
+def load_adjusted_prices(ticker: str) -> dict[str, float]:
+    """透過 adjuster 取得還原後收盤價（處理分割+配息）"""
+    from adjuster import get_adjusted_prices
+    adj = get_adjusted_prices(ticker, str(DB_PATH))
+    return {d: v["close"] for d, v in adj.items() if v["close"] is not None}
 
 
 # ── TG ───────────────────────────────────────────
@@ -160,8 +167,11 @@ def calc_signal() -> dict:
     # 讀資料
     conn = sqlite3.connect(str(DB_PATH))
     p0050_all = load_db_prices(conn, "0050.TW", 200)
-    p631l_all = load_db_prices(conn, "00631L.TW", 500)
+    p631l_raw = load_db_prices(conn, "00631L.TW", 500)
     conn.close()
+
+    # 00631L 用 adjuster 還原價（處理反分割+配息斷層）
+    p631l_adj = load_adjusted_prices("00631L.TW")
 
     vix_all = load_json_prices(VIX_JSON)
     vix9d_all = load_json_prices(VIX9D_JSON)
@@ -186,8 +196,9 @@ def calc_signal() -> dict:
     ma120_0050 = sma(p0050_all, all_dates, 120)
     ma30_smh = sma(smh_all, all_dates, 30)
     ma60_smh = sma(smh_all, all_dates, 60)
-    # 00631L 2026-03 反分割，用短窗口避免包含分割前的虛高價格
-    rolling_max_631l = rolling_max(p631l_all, all_dates, 20)
+    # 00631L C3: 用 adjuster 還原價 + expanding_max（和回測引擎一致）
+    adj_dates = sorted(p631l_adj.keys())
+    exp_max_631l = expanding_max(p631l_adj, adj_dates)
 
     # 取最新值
     p50 = p0050_all.get(latest_0050_date)
@@ -202,17 +213,24 @@ def calc_signal() -> dict:
     s30 = ma30_smh.get(latest_smh_date)
     s60 = ma60_smh.get(latest_smh_date)
 
-    # 00631L 最新 (取和 0050 同日或最近)
-    p631l = p631l_all.get(latest_0050_date)
-    mx631l = rolling_max_631l.get(latest_0050_date)
+    # 00631L 最新
+    p631l = p631l_raw.get(latest_0050_date)  # 顯示用 raw 價
+    p631l_adj_latest = p631l_adj.get(latest_0050_date)  # C3 用 adj 價
+    mx631l_adj = exp_max_631l.get(latest_0050_date)  # expanding max (adj)
+
+    # 00631L 前日收盤（回場 B 用）
+    p631l_prev_adj = None
+    if latest_0050_date in p631l_adj:
+        prev_dates = [d for d in adj_dates if d < latest_0050_date]
+        if prev_dates:
+            p631l_prev_adj = p631l_adj[prev_dates[-1]]
 
     # 4 個出場條件 (h_v2_1)
     c1 = bool(p50 and ma60 and ma120 and p50 < ma60 and p50 < ma120)
     c2 = bool(vix and vix9d and vix3m and vix > 28 and vix9d > 28 and vix3m > 28)
-    # 安全檢查：如果 max 是 current 的 2 倍以上，代表窗口跨越了分割事件，跳過
-    c3_raw = bool(p631l and mx631l and mx631l > 0 and (p631l / mx631l - 1) < -0.10)
-    c3_sane = not (mx631l and p631l and mx631l > p631l * 2)  # max 不應超過 current 2 倍
-    c3 = c3_raw and c3_sane
+    # C3: 用 adjuster 還原價的 expanding_max 判斷回撤（和回測一致）
+    c3 = bool(p631l_adj_latest and mx631l_adj and mx631l_adj > 0
+             and (p631l_adj_latest / mx631l_adj - 1) < -0.10)
     c4 = bool(smh and s30 and s60 and smh < s30 and smh < s60)
 
     n_conds = sum([c1, c2, c3, c4])
@@ -265,7 +283,11 @@ def calc_signal() -> dict:
         reentry_reason = None
         if not disaster:  # A: 非災難
             reentry_reason = f"非災難回場（{n_conds}/4）"
-        # B: 00631L 單日漲幅 ≥ 8%（需要前日價，簡化：跳過）
+        # B: 00631L 單日漲幅 ≥ 8%（用 adjuster 還原價避免分割日假跳）
+        if not reentry_reason and p631l_adj_latest and p631l_prev_adj and p631l_prev_adj > 0:
+            daily_gain = (p631l_adj_latest / p631l_prev_adj - 1)
+            if daily_gain >= 0.08:
+                reentry_reason = f"急漲回場（+{daily_gain*100:.1f}%）"
         # C: 從出場後最低反彈 ≥ 20%
         if not reentry_reason and p631l and out_low and out_low > 0:
             bounce = (p631l / out_low - 1)
@@ -289,7 +311,7 @@ def calc_signal() -> dict:
         {"name": "VIX/9D/3M 全 > 28", "met": c2,
          "detail": f"VIX={vix:.1f}, 9D={vix9d:.1f}, 3M={vix3m:.1f}" if vix and vix9d and vix3m else "資料不足"},
         {"name": "00631L 回撤 > 10%", "met": c3,
-         "detail": f"631L={p631l:.2f}, 高點={mx631l:.2f}, 跌幅={((p631l/mx631l-1)*100):.1f}%" if p631l and mx631l else "資料不足"},
+         "detail": f"631L={p631l:.2f}(adj={p631l_adj_latest:.2f}), 高點={mx631l_adj:.2f}(adj), 跌幅={((p631l_adj_latest/mx631l_adj-1)*100):.1f}%" if p631l and p631l_adj_latest and mx631l_adj else "資料不足"},
         {"name": "SMH < MA30 且 < MA60", "met": c4,
          "detail": f"SMH={smh:.2f}, MA30={s30:.2f}, MA60={s60:.2f}" if smh and s30 and s60 else "資料不足"},
     ]
