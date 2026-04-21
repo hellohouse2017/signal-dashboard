@@ -96,6 +96,25 @@ def load_adjusted_prices(ticker: str) -> dict[str, float]:
     return {d: v["close"] for d, v in adj.items() if v["close"] is not None}
 
 
+def fetch_today_close_yf(yf_ticker: str) -> float | None:
+    """用 yfinance 即時抓取今日收盤價（收盤後 ~5 分鐘可用）"""
+    try:
+        import yfinance as yf
+        ticker = yf.Ticker(yf_ticker)
+        hist = ticker.history(period="1d")
+        if hist.empty:
+            return None
+        close_val = float(hist["Close"].iloc[-1])
+        actual_date = hist.index[-1].strftime("%Y-%m-%d")
+        if actual_date == date.today().isoformat():
+            return close_val
+        # yfinance 回傳的不是今天 → 今天可能非交易日
+        return None
+    except Exception as e:
+        print(f"  ⚠️ yfinance {yf_ticker} 即時抓取失敗: {e}")
+        return None
+
+
 # ── TG ───────────────────────────────────────────
 def _load_tg_credentials() -> tuple[str, str]:
     token = os.environ.get("TG_BOT_TOKEN", "")
@@ -172,6 +191,24 @@ def calc_signal() -> dict:
 
     # 00631L 用 adjuster 還原價（處理反分割+配息斷層）
     p631l_adj = load_adjusted_prices("00631L.TW")
+
+    # ── yfinance 即時補抓（收盤後 DB 還沒更新時用）────
+    today_str = date.today().isoformat()
+    yf_supplemented = False
+    if today_str not in p0050_all and datetime.now().hour >= 13:
+        yf_0050 = fetch_today_close_yf("0050.TW")
+        if yf_0050:
+            p0050_all[today_str] = yf_0050
+            print(f"  📡 0050 今日收盤 (yfinance): {yf_0050:.2f}")
+            yf_supplemented = True
+    if today_str not in p631l_raw and datetime.now().hour >= 13:
+        yf_631l = fetch_today_close_yf("00631L.TW")
+        if yf_631l:
+            p631l_raw[today_str] = yf_631l
+            # 今日 adj_factor = 1.0，所以 raw close = adj close
+            p631l_adj[today_str] = yf_631l
+            print(f"  📡 00631L 今日收盤 (yfinance): {yf_631l:.2f}")
+            yf_supplemented = True
 
     vix_all = load_json_prices(VIX_JSON)
     vix9d_all = load_json_prices(VIX9D_JSON)
