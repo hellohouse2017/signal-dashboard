@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.signal.intraday-fetcher</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/python3</string>
+        <string>/Users/tangyukao/Documents/Antigravity/選股策略/scanner/fetch_intraday.py</string>
+        <string>daily</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/Users/tangyukao/Documents/Antigravity/選股策略/scanner</string>
+    <key>StartCalendarInterval</key>
+    <dict>
+        <!-- 每天 06:35, 錯開 data_updater (06:30), 美股已收盤 -->
+        <key>Hour</key>
+        <integer>6</integer>
+        <key>Minute</key>
+        <integer>35</integer>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>/tmp/intraday-fetcher.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/intraday-fetcher.err</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+</dict>
+</plist>

@@ -1,7 +1,12 @@
 .vercel
 scanner/市場數據.db
+scanner/intraday.db
+scanner/回測_0050還原數據.db
 scanner/*.log
 data/
 __pycache__/
 *.pyc
 scanner/.env
+.DS_Store
+.vscode/
+AGENTS.md

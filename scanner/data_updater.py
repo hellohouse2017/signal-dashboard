@@ -420,6 +420,11 @@ def git_push_json() -> bool:
             ["git", "commit", "-m", f"📊 data_updater: JSON 更新 {today_str}"],
             cwd=str(repo_root), check=True, capture_output=True,
         )
+        # Pull --rebase (防止 Air 端有新 commit 導致 push 失敗)
+        subprocess.run(
+            ["git", "pull", "--rebase"],
+            cwd=str(repo_root), check=True, capture_output=True,
+        )
         # Push
         subprocess.run(
             ["git", "push"],

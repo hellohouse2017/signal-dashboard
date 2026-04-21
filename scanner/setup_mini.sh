@@ -79,7 +79,7 @@ fi
 echo ""
 echo "[5/5] 安裝 crontab 排程..."
 CRON_MARKER="# 選股策略：Mini 每日數據更新"
-CRON_CMD="30 6 * * * cd $REPO_DIR && git pull --ff-only >> /tmp/data-updater.log 2>&1 && cd scanner && /usr/bin/python3 data_updater.py --git-push >> /tmp/data-updater.log 2>&1"
+CRON_CMD="30 6 * * * cd $REPO_DIR && git pull --rebase >> /tmp/data-updater.log 2>&1 && cd scanner && /usr/bin/python3 data_updater.py --git-push >> /tmp/data-updater.log 2>&1"
 
 # 檢查是否已安裝
 if crontab -l 2>/dev/null | grep -q "選股策略"; then
