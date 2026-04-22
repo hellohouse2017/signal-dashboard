@@ -1,11 +1,11 @@
 name: Signal Check & TG Notify
 
 on:
-  schedule:
-    # 每天 22:00 UTC = 台灣 06:00 AM（美股收盤後）
-    # UTC 週日~四 = 台灣時間週一~五
-    - cron: '0 22 * * 0-4'
-  workflow_dispatch:  # 可手動觸發
+  # schedule:
+    # 已停用：改用本地 launchd 排程（每日 14:00 台灣時間）
+    # 原排程：每天 22:00 UTC = 台灣 06:00 AM
+    # - cron: '0 22 * * 0-4'
+  workflow_dispatch:  # 保留手動觸發作為備援
 
 jobs:
   signal-check:
