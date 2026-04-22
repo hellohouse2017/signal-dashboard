@@ -421,10 +421,15 @@ def git_push_json() -> bool:
             cwd=str(repo_root), check=True, capture_output=True,
         )
         # Pull --rebase (防止 Air 端有新 commit 導致 push 失敗)
-        subprocess.run(
+        # 失敗不阻擋 push（可能只是網路暫時問題）
+        pull_result = subprocess.run(
             ["git", "pull", "--rebase"],
-            cwd=str(repo_root), check=True, capture_output=True,
+            cwd=str(repo_root), capture_output=True,
         )
+        if pull_result.returncode != 0:
+            stderr = pull_result.stderr.decode().strip()[:200] if pull_result.stderr else ""
+            print(f"  ⚠️ git pull --rebase 失敗（繼續嘗試 push）: {stderr}")
+
         # Push
         subprocess.run(
             ["git", "push"],
