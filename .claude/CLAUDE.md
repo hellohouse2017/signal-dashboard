@@ -75,5 +75,5 @@
 cd ~/Documents/Antigravity/選股策略
 git pull
 cat state.md                                # 看即時狀態
-tail -5 scanner/signal-notify-local.log     # 通知器有沒有每天跑
+ssh mini 'tail -5 /tmp/signal-notify.log'   # Mini 通知器有沒有每天跑
 ```
