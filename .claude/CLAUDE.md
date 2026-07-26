@@ -19,16 +19,16 @@
   - `corporate_actions` — 拆分/配息事件 (Source: `corporate_actions.json`)
 - **還原引擎**: `scanner/adjuster.py` (動態計算，最新日 factor=1.0 往回推)
 
-### 單機架構（2026-07-27 起，Mini 已退役）
-| Air launchd 排程 | 職責 |
+### 架構（2026-07-27 定案：作業鏈在 Mini 24/7，Air 純開發）
+| Mini cron | 職責 |
 |---|---|
-| 06:40 `com.signal.daily-data-local` | `data_updater --no-alert --git-push`：抓 TWSE+yfinance、sync 事件表、push JSON |
-| 07:10 `com.signal.notify-local` | `signal_notify`：算 v2.2 訊號 + 發 TG（每日一則 = heartbeat） |
+| 06:40 | `git pull --rebase` + `data_updater --no-alert --git-push`：抓數據、sync 事件表、push JSON |
+| 07:10 | `signal_notify`：算 v2.2 訊號 + 發 TG（每日一則 = heartbeat，>24h 沒訊息=pipeline 掛了） |
 
-- Mini 的 data_updater(16:00) 與 signal_notify(13:40) cron 已移除
-  （備份：Mini `~/crontab.backup.2026-07-27`），民宿系統等其他排程不受影響
-- **JSON 進 git**（備份 + 歷史）：`corporate_actions.json`（事件表 SoT）+ `VIX/9D/3M/SMH歷史.json`
-- **DB 不走 git**：本地由 raw + adjuster 重建
+- Air 的資料/通知 launchd 已停用（`~/Library/LaunchAgents.disabled/`），只留 intraday fetcher（研究用）
+- **JSON 進 git**（Mini 每日 push）：`corporate_actions.json`（事件表 SoT）+ `VIX/9D/3M/SMH歷史.json`
+- **DB 不走 git**：各機本地由 raw + adjuster 重建；Air 要新資料就 `git pull` + 跑 `data_updater.py`（不加 --git-push）
+- ⚠️ **Air 上 signal_notify 一律 `--dry-run`**（真跑會雙發 TG + 狀態檔分岔，正式狀態在 Mini）
 
 ## 重要檔案
 
@@ -53,8 +53,8 @@
 ## 重要提醒
 
 ### 改事件時必走流程
-1. 改 `scanner/corporate_actions.json`
-2. 隔天 06:40 排程自動 sync 進 DB 並 git push（急用就手動 `python3 data_updater.py --git-push`）
+1. 在 Air 改 `scanner/corporate_actions.json` → `git push`
+2. Mini 隔天 06:40 自動 pull + sync 進 DB（急用就 `ssh mini` 手動跑 data_updater）
 
 ### 絕不要做
 - ❌ 手動改 DB 事件表（會被下次 sync 覆蓋回 JSON 版本）

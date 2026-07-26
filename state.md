@@ -31,11 +31,12 @@
 - 已測否決、勿再投入：T+0 盤中執行（更差）、加碼池留現金（大輸全投入）、
   參數再調優（曲面崎嶇 = overfit）、日內當沖疊加（archive 已否決）。
 
-### 通知器（2026-07-27 上線）
-- launchd: `com.signal.notify-local`（每日 07:10，資料更新 06:40 之後）
+### 通知器（2026-07-27 上線，跑在 Mini）
+- Mini cron：每日 07:10（資料更新 06:40 之後），24/7 不依賴筆電
 - 每天固定一則 TG = heartbeat；**超過 24h 沒訊息 = pipeline 掛了**
 - 資料過期警報：台股落後 TWSE 官方、VIX/SMH 落後台股 >4 天都會在訊息內警告
-- log: `scanner/signal-notify-local.log` / `.err`
+- log（在 Mini）: `/tmp/signal-notify.log`、`/tmp/data-updater.log`
+- ⚠️ **Air 上手動測試一律 `--dry-run`**（真跑會雙發 TG + 狀態檔分岔）
 - **史實更正**：體檢時說「7/17 訊號沒發出」是錯的——Mini 其實一直有一個
   13:40 cron 在跑舊版 signal_notify（美股資料滯後一天、含 parity bug、
   獨立狀態檔），7/17 閃崩當天有發出通知。該 cron 已於 2026-07-27 退役，
@@ -56,25 +57,27 @@
 3. 00675L 替代評估：需先補 raw 資料 + 事件表。
 4. 永豐證券 API 帳號進度（原待辦）。
 
-## 架構（2026-07-27 收斂為單機作業鏈）
-- **Air（本機，唯一作業鏈）**:
-  - 06:40 `data_updater --no-alert --git-push`（抓 TWSE+yfinance、sync 事件表、push JSON）
-  - 07:10 `signal_notify`（算訊號 + 發 TG）
-  - intraday fetcher（1分K 研究資料）
-- **Mini：已退役**（2026-07-27 移除其 16:00 data_updater 與 13:40 signal_notify cron，
-  備份在 Mini `~/crontab.backup.2026-07-27`；殭屍 agent `com.stockscanner.autoscan`
-  已卸載至 `~/LaunchAgents.disabled`。民宿系統等其他排程不受影響）
+## 架構（2026-07-27 定案：作業鏈在 Mini，Air 純開發）
+- **Mini（24/7，唯一作業鏈，cron）**:
+  - 06:40 `git pull --rebase` + `data_updater --no-alert --git-push`（抓數據、sync 事件表、push JSON）
+  - 07:10 `signal_notify`（算 v2.2 訊號 + 發 TG）
+  - 狀態檔 `.signal_state.json` 已從 Air 遷移（接軌到 2026-07-24）
+- **Air（開發/回測專用）**:
+  - launchd 資料/通知 agents 已停用（plist 移至 `~/Library/LaunchAgents.disabled/`）
+  - 保留 intraday fetcher（1分K 研究資料，Shioaji 憑證在 Air）
+  - 要資料就 `git pull`（Mini 每天 push JSON），DB 用 `data_updater.py` 本地重建（不加 --git-push）
+- 演進備註：先前一度收斂到 Air 單機（同日稍早），因「筆電可能沒開」改遷 Mini。
+  雲端方案（Vercel/GH Actions）是歷史死路：yfinance 封資料中心 IP + 排程抖動 + 無持久儲存。
 - **Source of Truth**: `corporate_actions.json` + `VIX/SMH歷史.json` + TWSE API
-- **DB**: `回測_0050還原數據.db` — 本地重建，不走 git
-- TG Bot: 選股王 @Bvcxza_bot（設定 `scanner/.env`）
-- 筆電風險：闔蓋出門則排程不跑；launchd 會在開蓋時補跑，09:00 前開機即可。
-  可選強化：`sudo pmset repeat wakeorpoweron MTWRFSU 06:35:00`
+- **DB**: `回測_0050還原數據.db` — 各機本地重建，不走 git
+- TG Bot: 選股王 @Bvcxza_bot（`scanner/.env`，兩機各有一份）
+- 殘餘風險：Mini 停電/斷網 → heartbeat 沒來就知道
 
 ## 接手先做
 ```bash
 cd ~/Documents/Antigravity/選股策略
 git pull
 cat state.md
-tail -20 scanner/signal-notify-local.log   # 通知器有沒有每天跑
-python3 scanner/signal_notify.py --dry-run # 看當前 v2.2 訊號
+ssh mini 'tail -20 /tmp/signal-notify.log'   # Mini 通知器有沒有每天跑
+python3 scanner/signal_notify.py --dry-run   # 看當前 v2.2 訊號（Air 只准 dry-run）
 ```
