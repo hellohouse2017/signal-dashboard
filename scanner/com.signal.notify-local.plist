@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.signal.notify-local</string>
+
+  <!-- 07:10 daily: after data updater (06:40), before TW open (09:00).
+       Runs every day incl. weekends as a pipeline heartbeat — one TG
+       message per day; >24h of silence means the pipeline is broken. -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Library/Frameworks/Python.framework/Versions/3.14/bin/python3</string>
+    <string>/Users/tangyukao/Documents/Antigravity/選股策略/scanner/signal_notify.py</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/tangyukao/Documents/Antigravity/選股策略/scanner</string>
+
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>7</integer>
+    <key>Minute</key>
+    <integer>10</integer>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <false/>
+
+  <key>StandardOutPath</key>
+  <string>/Users/tangyukao/Documents/Antigravity/選股策略/scanner/signal-notify-local.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>/Users/tangyukao/Documents/Antigravity/選股策略/scanner/signal-notify-local.err</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/Library/Frameworks/Python.framework/Versions/3.14/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+</dict>
+</plist>

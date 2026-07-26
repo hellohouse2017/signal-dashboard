@@ -49,6 +49,7 @@ from h_strategy import (
     V22,
     REGIME_WIN,
     RESET_QUIET_DAYS,
+    asof_date_map,
     disaster_exit_threshold,
     eval_conditions,
     flash_triggered,
@@ -289,8 +290,8 @@ def load_state() -> dict:
         "consec_days": 0,
         "sell_streak": 0,      # v2.1 漸進門檻
         "quiet_days": 0,       # 持倉安靜天數（重置 sell_streak 用）
-        "position": "holding", # holding / out
-        "out_low": None,       # 出場後最低價（回場條件 C）
+        "position": "holding",   # holding / out
+        "out_low_date": None,    # 出場後最低價的日期（回場條件 C，還原價每次重查）
         "last_reentry_reason": None,
         "last_status": "normal",
         "last_date": "",
@@ -303,7 +304,7 @@ def save_state(state: dict):
 
 # ── 信號計算 ─────────────────────────────────────
 def calc_signal(dry_run: bool = False) -> dict:
-    """計算當日信號（h_v2_1 策略條件）"""
+    """計算當日信號（h_strategy canonical v2.2）"""
 
     # 讀資料（0050 需 400 筆：MA200 regime 需 200 天窗口 + 回溯補齊餘裕）
     conn = sqlite3.connect(str(DB_PATH))
@@ -376,6 +377,16 @@ def calc_signal(dry_run: bool = False) -> dict:
                 f"本地台股資料只到 {latest_tw_date}，TWSE 官方已到 {official_latest_tw_date}"
             )
 
+    # 美股資料過期警報：VIX/SMH 落後台股最新日超過 4 個日曆天視為抓取失敗
+    for us_label, us_latest in (("VIX", latest_vix_date), ("SMH", latest_smh_date)):
+        if us_latest and us_latest != "N/A":
+            gap_days = (datetime.strptime(latest_tw_date, "%Y-%m-%d")
+                        - datetime.strptime(us_latest, "%Y-%m-%d")).days
+            if gap_days > 4:
+                data_warnings.append(
+                    f"{us_label} 資料落後台股 {gap_days} 天（最新 {us_latest}），疑似更新失敗"
+                )
+
     # 計算 MA
     ma60_0050 = sma(p0050_all, all_dates, 60)
     ma120_0050 = sma(p0050_all, all_dates, 120)
@@ -404,23 +415,10 @@ def calc_signal(dry_run: bool = False) -> dict:
     p631l_adj_latest = p631l_adj.get(latest_tw_date)  # C3 用 adj 價
     mx631l_adj = exp_max_631l.get(latest_tw_date)  # expanding max (adj)
 
-    # 00631L 前日收盤（回場 B 用）
-    p631l_prev_adj = None
-    if latest_tw_date in p631l_adj:
-        prev_dates = [d for d in adj_dates if d < latest_tw_date]
-        if prev_dates:
-            p631l_prev_adj = p631l_adj[prev_dates[-1]]
-
-    # 4 個出場條件 (h_v2_1)
-    c1 = bool(p50 and ma60 and ma120 and p50 < ma60 and p50 < ma120)
-    c2 = bool(vix and vix9d and vix3m and vix > 26 and vix9d > 26 and vix3m > 26)
-    # C3: 用 adjuster 還原價的 expanding_max 判斷回撤（和回測一致）
-    c3 = bool(p631l_adj_latest and mx631l_adj and mx631l_adj > 0
-             and (p631l_adj_latest / mx631l_adj - 1) < -0.15)
-    c4 = bool(smh and s30 and s60 and smh < s30 and smh < s60)
-
-    n_conds = sum([c1, c2, c3, c4])
-    disaster = n_conds >= 3
+    # 條件評估一律走 h_strategy.eval_conditions（canonical），不留 inline 複製。
+    # 美股 as-of 對齊：US 休市日沿用最近一個美股收盤（與回測引擎同一 helper）。
+    vix_asof = asof_date_map(vix_all, all_dates)
+    smh_asof = asof_date_map(smh_all, all_dates)
 
     # ── 狀態追蹤與回溯補齊 ─────────────────────────
     state = load_state()
@@ -437,14 +435,12 @@ def calc_signal(dry_run: bool = False) -> dict:
             ma120_d = ma120_0050.get(d)
             ma_regime_d = ma_regime_0050.get(d)
 
-            vix_d_dates = [date for date in vix_all if date <= d]
-            vix_date = max(vix_d_dates) if vix_d_dates else None
+            vix_date = vix_asof.get(d)
             vix_d = vix_all.get(vix_date) if vix_date else None
             vix9d_d = vix9d_all.get(vix_date) if vix_date else None
             vix3m_d = vix3m_all.get(vix_date) if vix_date else None
 
-            smh_d_dates = [date for date in smh_all if date <= d]
-            smh_date = max(smh_d_dates) if smh_d_dates else None
+            smh_date = smh_asof.get(d)
             smh_d = smh_all.get(smh_date) if smh_date else None
             s30_d = ma30_smh.get(smh_date) if smh_date else None
             s60_d = ma60_smh.get(smh_date) if smh_date else None
@@ -470,9 +466,11 @@ def calc_signal(dry_run: bool = False) -> dict:
             disaster_d = n_conds_d >= 3
 
             # v2.2 多頭 regime + regime-aware 閃崩防守
+            # 閃崩防守用「還原價」：raw 價在分割/配息除權日會跳空，誤觸發閃崩
+            #（回測引擎也是用還原價，兩邊必須一致）
             bull_d = is_bull(p50_d, ma_regime_d)
-            recent_dates_d = [dt for dt in all_dates if dt <= d and dt in p631l_raw][-6:]
-            recent_closes_d = [p631l_raw[dt] for dt in recent_dates_d]
+            recent_dates_d = [dt for dt in adj_dates if dt <= d][-6:]
+            recent_closes_d = [p631l_adj[dt] for dt in recent_dates_d]
             flash_exit_d, _ = flash_triggered(recent_closes_d, bull_d, PARAMS)
 
             if disaster_d:
@@ -493,35 +491,36 @@ def calc_signal(dry_run: bool = False) -> dict:
                     state["sell_streak"] = sell_streak_d + 1
                     state["quiet_days"] = 0
                     state["position"] = "out"
-                    state["out_low"] = p631l_d
+                    # 出場後低點存「日期」，每次用還原價重查——分割/配息
+                    # 追溯改寫還原序列時，low 自動跟著同一把尺（與回測一致）
+                    state["out_low_date"] = d
                     state["last_reentry_reason"] = None
                 elif disaster_d:
                     status_d = "exit_warning"
                     state["quiet_days"] = 0
-                elif n_conds_d >= 2:
-                    status_d = "exit_caution"
-                    state["quiet_days"] = 0
                 else:
-                    status_d = "normal"
-                    if not flash_exit_d:
-                        state["quiet_days"] = state.get("quiet_days", 0) + 1
-                        if state["quiet_days"] >= RESET_QUIET_DAYS:
-                            state["sell_streak"] = 0
+                    # 安靜日定義與回測引擎/規格一致：n < 3 即累計
+                    #（n=2 只影響顯示為「注意」，不打斷 quiet 累計）
+                    status_d = "exit_caution" if n_conds_d >= 2 else "normal"
+                    state["quiet_days"] = state.get("quiet_days", 0) + 1
+                    if state["quiet_days"] >= RESET_QUIET_DAYS:
+                        state["sell_streak"] = 0
             elif position_d == "out":
-                out_low_d = state.get("out_low")
-                if p631l_d and (out_low_d is None or p631l_d < out_low_d):
-                    state["out_low"] = p631l_d
-                    out_low_d = p631l_d
+                out_low_date_d = state.get("out_low_date")
+                out_low_d = p631l_adj.get(out_low_date_d) if out_low_date_d else None
+                if p631l_adj_d and (out_low_d is None or p631l_adj_d < out_low_d):
+                    state["out_low_date"] = d
+                    out_low_d = p631l_adj_d
 
                 reason_d = reentry_reason(
                     disaster_d, n_conds_d,
                     p631l_adj_d, p631l_prev_adj_d,
-                    p631l_d, out_low_d,
+                    p631l_adj_d, out_low_d,
                 )
                 if reason_d:
                     status_d = "entry_safe"
                     state["position"] = "holding"
-                    state["out_low"] = None
+                    state["out_low_date"] = None
                     state["last_reentry_reason"] = reason_d
                 else:
                     status_d = "still_out"
@@ -546,11 +545,11 @@ def calc_signal(dry_run: bool = False) -> dict:
         smh, s30, s60,
     )
 
-    # v2.2 多頭 regime（最新日）+ regime-aware 閃崩防守
+    # v2.2 多頭 regime（最新日）+ regime-aware 閃崩防守（還原價，與回測一致）
     ma_regime = ma_regime_0050.get(latest_tw_date)
     bull = is_bull(p50, ma_regime)
-    recent_dates_631l = [dt for dt in all_dates if dt <= latest_tw_date and dt in p631l_raw][-6:]
-    recent_closes = [p631l_raw[dt] for dt in recent_dates_631l]
+    recent_dates_631l = [dt for dt in adj_dates if dt <= latest_tw_date][-6:]
+    recent_closes = [p631l_adj[dt] for dt in recent_dates_631l]
     flash_exit, flash_detail = flash_triggered(recent_closes, bull, PARAMS)
 
     n_conds = sum([c1, c2, c3, c4])

@@ -3,6 +3,7 @@ scanner/市場數據.db
 scanner/intraday.db
 scanner/回測_0050還原數據.db
 scanner/*.log
+scanner/*.err
 data/
 __pycache__/
 *.pyc

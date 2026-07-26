@@ -1,66 +1,69 @@
 # 選股策略 — 即時狀態
 
-最後更新: 2026-07-06
+最後更新: 2026-07-27
 
 ## 目前狀態
 ✅ 雙機資料同步架構運作中
-✅ **H 策略 v2.2 定案並落地**（canonical single source of truth + TG 通知同步）
-📦 8 個當沖策略 + 網格系統 + Dashboard 已歸檔（實測無 edge，見 `archive/README.md`）
+✅ **H 策略 v2.2 通知器已正式上線**（2026-07-27 首發 + launchd 每日 07:10 自動跑）
+✅ Live-回測 parity 全面對齊（5 個不一致已修，見下）
+📦 加碼池已實測否決（`scanner/bonus_pool_v2.py`）；當沖/網格/Dashboard 早前已歸檔
 
 ## H 策略 v2.2（主倉，長期持有 00631L）
 
-### 核心
-- v2.1 的 alpha 來源是「災難避開」，不是選股訊號 → 保留。
-- v2.2 只解一個實測弱點：**多頭中出場太頻繁**（假跌破洗出、隔天追高）。
-- 兩個 regime 槓桿（都以 0050 收盤 vs MA200 判斷多頭）:
-  - **多頭鈍化出場**：0050 > MA200 時，disaster 出場門檻 +1（`bull_exit_bonus=1`）。
-  - **多頭放寬閃崩防守**：多頭時單日 -9% / 6 根 -22%（平時 -6% / -15%），`flash_mode=bull_relax`。
-
-### 樣本外驗證（2015-2020 訓練挑參數 / 2021-2026 驗證，含證交稅）
-| | v2.1 | v2.2 | 差 |
+### 誠實績效（2026-07-24 資料，parity 對齊後引擎）
+| | v2.2 | v2.1 | B&H |
 |---|---|---|---|
-| TEST CAGR | 73.6% | 74.5% | +0.9pp |
-| TEST 賣出次數 | 26 | 16 | **少 38%** |
-| 全期 CAGR | 52.0% | 51.9% | 持平 |
-| 全期 MDD | -30.7% | -30.7% | 持平 |
+| 全期 CAGR | **47.0%** | 47.0% | 35.9% |
+| 全期 MDD | -32.5% | -32.5% | -55.1% |
+| 賣出次數 | **29** | 43 | 0 |
 
-穩健結論：**報酬持平略升、交易次數大減**（省成本、更好執行）。
-誠實標註：TEST 期 MDD 在不同算法下 v2.1/v2.2 互有領先（-28.2% vs -30.7%），差異不顯著；v2.2 的確定性優勢在「少交易」而非「更抗跌」。
+- 舊文件的 49.6%（更早的 51.9%）含「美國休市日 C2/C4 被強制 False」的評估漏洞，
+  對齊 live 語意（美股 as-of forward-fill）後誠實數字是 47.0%。
+- **v2.1 與 v2.2 終值已完全相同**；v2.2 的唯一穩健優勢是少 14 次交易。
+- 2026-07 穩健性體檢結論：alpha 85% 集中在 4 個災難事件（2022、2025 最大）；
+  2018 Q4 型陰跌是已知失敗模式；C3 門檻鄰域敏感（±2.5pp → CAGR ∓3-6pp）。
+  引用數字時當區間看（45~48%），不要當點估計。
 
-### 檔案（canonical 架構，解決門檻漂移技術債）
-- `scanner/h_strategy.py` — **唯一策略定義**（門檻、條件、決策 helper）
-- `scanner/h_v2_2.py` — 回測引擎（import h_strategy）
-- `scanner/signal_notify.py` — 每日 TG 通知（import h_strategy，已與回測同步）
-- `scanner/optimize_h_v2_2.py` — OOS 網格研究腳本（產出上述驗證）
-- `scanner/STRATEGY_SPEC_v2.2-live.md` — 規格書（取代 v2.1-live）
-- 舊 `scanner/h_v2_1.py` / `backtest_core.py` 保留作 legacy 對照
+### 執行紀律（比調參重要）
+- 回測假設 T+1 開盤成交。實測：拖到隔日收盤 CAGR -7.5pp、晚一天 -8.4pp。
+- **06:30 後看訊號、09:00 開盤執行**，這個時序本身就是 edge 的一部分
+  （美股同日資料配對貢獻 +4pp，靠的是 cron 在美股收盤後、台股開盤前跑）。
+- 已測否決、勿再投入：T+0 盤中執行（更差）、加碼池留現金（大輸全投入）、
+  參數再調優（曲面崎嶇 = overfit）、日內當沖疊加（archive 已否決）。
 
-### 重要修正
-- 回測引擎補上 **0.1% 證交稅**（原 backtest_core 只算手續費，略高估所有 H 績效）。
-- 移除主迴圈被複製 4 份、門檻不一致（VIX 26/28、C3 -10%/-15%）的技術債。
+### 通知器（2026-07-27 上線）
+- launchd: `com.signal.notify-local`（每日 07:10，資料更新 06:40 之後）
+- 每天固定一則 TG = heartbeat；**超過 24h 沒訊息 = pipeline 掛了**
+- 資料過期警報：台股落後 TWSE 官方、VIX/SMH 落後台股 >4 天都會在訊息內警告
+- log: `scanner/signal-notify-local.log` / `.err`
+
+### Parity 修復（2026-07-27，回測與 live 現在走同一條路）
+1. 回測美股資料改 as-of forward-fill（`h_strategy.asof_date_map`，兩邊共用）
+2. 通知器閃崩防守 raw 價 → 還原價（分割/配息日不再誤觸發）
+3. 通知器 out_low 改存日期、每次還原價重查（除權後回場條件 C 不會壞）
+4. 通知器 quiet_days 對齊規格（n<3 即累計；原本 n=2 會錯誤歸零）
+5. 刪掉 signal_notify 主路徑的 inline 條件複製（一律走 `eval_conditions`）
+- 回測 prev_close 同步改為真實前一台股交易日（台股連假後回場條件 B 可評估）
+
+## 待辦
+1. **手續費折扣（使用者行動）**：向券商談電子下單折扣，0.1425%→0.04% 全期 +0.9pp CAGR，
+   零風險。談成後不用改程式（回測維持保守全額費率）。
+2. 部分出場研究（閃崩先砍半倉）：需先定義半倉回場規則 + train/test 協議才准跑。
+3. 00675L 替代評估：需先補 raw 資料 + 事件表。
+4. 永豐證券 API 帳號進度（原待辦）。
 
 ## 架構（不變）
 - **Air (Mac)**: 開發 / 研究 / 手動更新事件
-- **Mini**: 每日 06:30 cron 自動抓數據 + git push JSON
-- **Source of Truth**: `corporate_actions.json` (33 筆) + `VIX/SMH歷史.json` + TWSE API
+- **本機 launchd**: 06:40 data updater、07:10 signal notify、intraday fetcher
+- **Source of Truth**: `corporate_actions.json` + `VIX/SMH歷史.json` + TWSE API
 - **DB**: `回測_0050還原數據.db` — 本地重建，不走 git
 - TG Bot: 選股王 @Bvcxza_bot（設定 `scanner/.env`）
-
-## 歸檔（archive/，實測無 edge）
-- `strategies/` 8 個當沖策略：全部負 CAGR。高勝率（gap_fill 70%）掩蓋不對稱爆虧；gap_fill 611% CAGR 是複利+前視假象。
-- `grid_backtest.py` / `grid_variant_research.py`：20 組參數全部打不過 B&H（1/7 勝），且日內 OHLC 路徑用猜的。
-- `dashboard.py`：上述策略的前端。
-- 詳見 `archive/README.md`。
-
-## 下次繼續
-- **未實跑正式 launchd 通知的 v2.2 首次真發**（目前 dry-run 驗證通過，state.md 停在 2026-06-05，下次真跑會用 v2.2 邏輯回溯補齊）
-- 加碼池實作（P1 長期待辦）
-- 永豐證券 API 帳號進度（原待辦）
 
 ## 接手先做
 ```bash
 cd ~/Documents/Antigravity/選股策略
 git pull
 cat state.md
-python3 scanner/signal_notify.py --dry-run   # 看當前 v2.2 訊號
+tail -20 scanner/signal-notify-local.log   # 通知器有沒有每天跑
+python3 scanner/signal_notify.py --dry-run # 看當前 v2.2 訊號
 ```

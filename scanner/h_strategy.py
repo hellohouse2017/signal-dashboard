@@ -15,7 +15,8 @@ v2.2 vs v2.1 (validated out-of-sample 2021-2026, see optimize_h_v2_2.py):
     sensitive in downtrends) -> cuts whipsaw exits that re-buy higher.
   - flash defense relaxes in a bull regime (`bull_relax`): single -9% /
     6-bar -22% instead of -6% / -15%.
-  Out-of-sample result on 100萬, annual_add=0, net of fee + sell tax:
+  Out-of-sample result on 100萬, annual_add=0, net of fee + sell tax
+  (as of 2026-07-06 data; point estimates drift with new data — treat as ranges):
     CAGR 72.9% -> 75.7% | MDD -32.3% -> -30.7% | Calmar 2.26 -> 2.46 | sells 24 -> 15
 
 To reproduce legacy v1/v2.1 behavior for comparison:
@@ -60,6 +61,24 @@ V21 = StrategyParams(bull_exit_bonus=0, flash_mode="always")       # legacy refe
 
 
 # ── Pure decision helpers (shared by backtest AND live notifier) ───────────────
+
+def asof_date_map(series: dict[str, float], dates: list[str]) -> dict[str, str | None]:
+    """For each date in `dates`, the latest key of `series` on or BEFORE it.
+
+    Canonical alignment of US series (VIX/SMH) to TW trading dates: on a US
+    holiday the last available US close still counts, matching the live
+    notifier's forward-fill. Backtests must use this instead of same-date
+    lookup, which silently forces C2/C4 false on US holidays.
+    `dates` must be sorted ascending and contain all series keys of interest.
+    """
+    out: dict[str, str | None] = {}
+    last: str | None = None
+    for d in dates:
+        if d in series:
+            last = d
+        out[d] = last
+    return out
+
 
 def eval_conditions(
     p50: float | None, ma60: float | None, ma120: float | None,

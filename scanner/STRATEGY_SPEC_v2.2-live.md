@@ -19,6 +19,11 @@ Supersedes `STRATEGY_SPEC_v2.1-live.md` (now legacy).
 - Data basis:
   - `00631L.TW` and `0050.TW`: adjusted OHLCV via `adjuster.py`
   - `VIX`, `VIX9D`, `VIX3M`, `SMH`: JSON daily series
+  - US series are read **as-of the latest US close on or before the TW date**
+    (`h_strategy.asof_date_map`, shared by backtester and notifier). On a US
+    holiday the last available close still counts — same-date-only lookup
+    (pre-2026-07-27 engines) silently forced C2/C4 false on those days and
+    overstated results by ~2.6pp CAGR.
 
 ---
 
@@ -124,6 +129,15 @@ between roughly flat and slightly worse for v2.2. The robust, method-independent
 wins are the higher out-of-sample return and the large cut in trade count (lower
 cost, easier execution). v2.2 is not a free lunch on drawdown; it is a whipsaw
 reduction that also lifts return.
+
+Update 2026-07-27 (aligned engine, data through 2026-07-24): with the US as-of
+alignment fix and three more weeks of data, v2.2 and v2.1 land on the SAME
+terminal value (full-period CAGR 47.0%, MDD -32.5%, vs B&H 35.9% / -55.1%);
+v2.2's remaining robust advantage is trade count (29 vs 43 sells). The 2026-07
+robustness audit also showed: 85% of the edge comes from 4 crash episodes,
+C3's neighborhood is rugged (treat CAGR as a 45-48% range, not a point), and
+execution delay is the costliest failure (T+2 open ≈ -8pp CAGR). Point
+estimates in this file drift with new data — ranges are the honest reading.
 
 ---
 

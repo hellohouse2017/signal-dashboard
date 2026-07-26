@@ -17,7 +17,7 @@ from backtest_core import (
 )
 from h_strategy import (
     StrategyParams, V21, V22, SELL_TAX, FLASH_WINDOW,
-    eval_conditions, is_bull, flash_triggered,
+    asof_date_map, eval_conditions, is_bull, flash_triggered,
     disaster_exit_threshold, reentry_reason, RESET_QUIET_DAYS,
 )
 
@@ -48,10 +48,21 @@ class HStrategyBacktesterV22:
         smh_ma30 = sma(inputs.smh, dates, 30)
         smh_ma60 = sma(inputs.smh, dates, 60)
 
+        # Live parity: US series are read as-of the latest US close on or before
+        # the TW date (the notifier forward-fills the same way). Same-date lookup
+        # would force C2/C4 false on US holidays and diverge from live.
+        vix_asof = asof_date_map(inputs.vix, dates)
+        smh_asof = asof_date_map(inputs.smh, dates)
+
+        # Live parity: previous close = previous 00631L trading day, not the
+        # previous union date (which can be a US-only day after a TW holiday).
         prev_close_map: dict[str, float] = {}
-        for i, d in enumerate(dates):
-            if i > 0 and dates[i - 1] in etf631l and etf631l[dates[i - 1]]["close"]:
-                prev_close_map[d] = etf631l[dates[i - 1]]["close"]
+        prev = None
+        for d in dates:
+            if d in etf631l and etf631l[d]["close"]:
+                if prev is not None:
+                    prev_close_map[d] = prev
+                prev = etf631l[d]["close"]
 
         cash = cfg.initial_capital
         shares = 0.0
@@ -128,11 +139,13 @@ class HStrategyBacktesterV22:
             if position == "out" and not trades:
                 pending = ("BUY", "初始")
 
+            vd = vix_asof.get(date)
+            sd = smh_asof.get(date)
             c1, c2, c3, c4 = eval_conditions(
                 p0050.get(date), ma60.get(date), ma120.get(date),
-                inputs.vix.get(date), inputs.vix9d.get(date), inputs.vix3m.get(date),
+                inputs.vix.get(vd), inputs.vix9d.get(vd), inputs.vix3m.get(vd),
                 close, exp_max.get(date),
-                inputs.smh.get(date), smh_ma30.get(date), smh_ma60.get(date),
+                inputs.smh.get(sd), smh_ma30.get(sd), smh_ma60.get(sd),
             )
             n = sum([c1, c2, c3, c4])
             disaster = n >= 3
