@@ -9,7 +9,8 @@
 ## 專案架構
 
 ### 核心目標
-台股 ETF 策略（H 策略 v2.1），以 0050 / 00631L 為主，用於實盤輔助決策。
+台股 ETF 策略（H 策略 v2.2，canonical 定義在 `scanner/h_strategy.py`），
+以 0050 / 00631L 為主，用於實盤輔助決策。
 
 ### 資料庫
 - **Primary DB**: `scanner/回測_0050還原數據.db`
@@ -18,24 +19,25 @@
   - `corporate_actions` — 拆分/配息事件 (Source: `corporate_actions.json`)
 - **還原引擎**: `scanner/adjuster.py` (動態計算，最新日 factor=1.0 往回推)
 
-### 雙機架構
-| 角色 | 職責 |
+### 單機架構（2026-07-27 起，Mini 已退役）
+| Air launchd 排程 | 職責 |
 |---|---|
-| **Air** (Mac) | 開發、回測、手動維護 `corporate_actions.json` |
-| **Mini** (Mac mini) | 每日 06:30 cron 自動抓數據 + git push |
+| 06:40 `com.signal.daily-data-local` | `data_updater --no-alert --git-push`：抓 TWSE+yfinance、sync 事件表、push JSON |
+| 07:10 `com.signal.notify-local` | `signal_notify`：算 v2.2 訊號 + 發 TG（每日一則 = heartbeat） |
 
-### 同步機制
-- **JSON as Source of Truth**：所有需要兩邊對齊的資料存 JSON 進 git
-  - `corporate_actions.json` — 事件表
-  - `VIX歷史.json` / `VIX9D歷史.json` / `VIX3M歷史.json` / `SMH歷史.json` — 市場指標
-- **DB 不走 git**：每台機器本地重建，透過 JSON + TWSE API 同步
+- Mini 的 data_updater(16:00) 與 signal_notify(13:40) cron 已移除
+  （備份：Mini `~/crontab.backup.2026-07-27`），民宿系統等其他排程不受影響
+- **JSON 進 git**（備份 + 歷史）：`corporate_actions.json`（事件表 SoT）+ `VIX/9D/3M/SMH歷史.json`
+- **DB 不走 git**：本地由 raw + adjuster 重建
 
 ## 重要檔案
 
 ### 策略
-- `scanner/h_v2_1.py` — H 策略 v2.1 主檔
-- `scanner/h_v3_whipsaw.py` — Whipsaw 防護方案 A-E 測試
-- `scanner/STRATEGY_SUMMARY.md` — 策略總結
+- `scanner/h_strategy.py` — **唯一策略定義**（門檻/條件/決策 helper/asof 對齊）
+- `scanner/h_v2_2.py` — 回測引擎（import h_strategy）
+- `scanner/signal_notify.py` — 每日 TG 通知（import h_strategy）
+- `scanner/STRATEGY_SPEC_v2.2-live.md` — 規格書
+- `scanner/h_v2_1.py` / `h_v3_whipsaw.py` — legacy 對照
 
 ### 資料
 - `scanner/data_updater.py` — 每日更新器（TWSE + yfinance + 事件表 sync）
@@ -52,9 +54,7 @@
 
 ### 改事件時必走流程
 1. 改 `scanner/corporate_actions.json`
-2. `git push`
-3. Mini 隔天 06:30 自動同步（或手動 `python3 data_updater.py`）
-4. 兩邊 DB 自動對齊
+2. 隔天 06:40 排程自動 sync 進 DB 並 git push（急用就手動 `python3 data_updater.py --git-push`）
 
 ### 絕不要做
 - ❌ 手動改 DB 事件表（會被下次 sync 覆蓋回 JSON 版本）
@@ -68,14 +68,12 @@
 
 ## 下次繼續
 
-**優先順序：**
-1. 等待明確回測需求（如策略調整、新標的加入）
-2. 加碼池實作（P1 長期待辦）
-3. 資料完整性補強（P2, 影響小）
+**優先順序：** 見 `state.md` 待辦（加碼池已於 2026-07 實測否決，勿再列入）
 
 **接手 session 時先做：**
 ```bash
 cd ~/Documents/Antigravity/選股策略
-git pull  # 拿 Mini 最新數據
-cat state.md  # 看即時狀態
+git pull
+cat state.md                                # 看即時狀態
+tail -5 scanner/signal-notify-local.log     # 通知器有沒有每天跑
 ```

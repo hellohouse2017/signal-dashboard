@@ -36,6 +36,10 @@
 - 每天固定一則 TG = heartbeat；**超過 24h 沒訊息 = pipeline 掛了**
 - 資料過期警報：台股落後 TWSE 官方、VIX/SMH 落後台股 >4 天都會在訊息內警告
 - log: `scanner/signal-notify-local.log` / `.err`
+- **史實更正**：體檢時說「7/17 訊號沒發出」是錯的——Mini 其實一直有一個
+  13:40 cron 在跑舊版 signal_notify（美股資料滯後一天、含 parity bug、
+  獨立狀態檔），7/17 閃崩當天有發出通知。該 cron 已於 2026-07-27 退役，
+  收斂到本機 07:10 單一通知（美股同日配對、修 bug 後的 canonical 版）。
 
 ### Parity 修復（2026-07-27，回測與 live 現在走同一條路）
 1. 回測美股資料改 as-of forward-fill（`h_strategy.asof_date_map`，兩邊共用）
@@ -52,12 +56,19 @@
 3. 00675L 替代評估：需先補 raw 資料 + 事件表。
 4. 永豐證券 API 帳號進度（原待辦）。
 
-## 架構（不變）
-- **Air (Mac)**: 開發 / 研究 / 手動更新事件
-- **本機 launchd**: 06:40 data updater、07:10 signal notify、intraday fetcher
+## 架構（2026-07-27 收斂為單機作業鏈）
+- **Air（本機，唯一作業鏈）**:
+  - 06:40 `data_updater --no-alert --git-push`（抓 TWSE+yfinance、sync 事件表、push JSON）
+  - 07:10 `signal_notify`（算訊號 + 發 TG）
+  - intraday fetcher（1分K 研究資料）
+- **Mini：已退役**（2026-07-27 移除其 16:00 data_updater 與 13:40 signal_notify cron，
+  備份在 Mini `~/crontab.backup.2026-07-27`；殭屍 agent `com.stockscanner.autoscan`
+  已卸載至 `~/LaunchAgents.disabled`。民宿系統等其他排程不受影響）
 - **Source of Truth**: `corporate_actions.json` + `VIX/SMH歷史.json` + TWSE API
 - **DB**: `回測_0050還原數據.db` — 本地重建，不走 git
 - TG Bot: 選股王 @Bvcxza_bot（設定 `scanner/.env`）
+- 筆電風險：闔蓋出門則排程不跑；launchd 會在開蓋時補跑，09:00 前開機即可。
+  可選強化：`sudo pmset repeat wakeorpoweron MTWRFSU 06:35:00`
 
 ## 接手先做
 ```bash
